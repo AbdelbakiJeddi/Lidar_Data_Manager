@@ -20,3 +20,12 @@ def get_minio_client() -> Minio:
 def ensure_bucket(client: Minio, bucket_name: str) -> None:
     if not client.bucket_exists(bucket_name):
         client.make_bucket(bucket_name)
+
+def upload_local_file(client: Minio, bucket_name: str, local_path: str, object_name: str, content_type: str = "application/octet-stream") -> None:
+    """Uploads a local file to MinIO."""
+    client.fput_object(
+        bucket_name,
+        object_name,
+        local_path,
+        content_type=content_type,
+    )
