@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 minio
 python-multipart
+motor
+pydantic-settings
+numpy
