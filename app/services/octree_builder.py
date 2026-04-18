@@ -11,6 +11,7 @@ from minio import Minio
 
 from app.models import BoundingBox, OctreeNode
 from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, upload_local_file, download_file
+from app.services.pdal_processor import PDALProcessor, PDALPipelineError
 from app.services.las_tools_processor import LasToolsProcessor, LasToolsError
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,8 @@ class OctreeBuilder:
         self.dataset_id = dataset_id
         self.max_depth = max_depth
         self.point_threshold = point_threshold
-        self.pdal = LasToolsProcessor()
+        self.pdal = PDALProcessor()
+        self.lastools = LasToolsProcessor()  # Fallback
         self.temp_dir = temp_dir or tempfile.mkdtemp(prefix=f"octree_{dataset_id}_")
         self.nodes: List[OctreeNode] = []
 
@@ -83,7 +85,7 @@ class OctreeBuilder:
     ) -> OctreeNode:
         try:
             point_count = self.pdal.get_point_count(input_file)
-        except LasToolsError:
+        except (LasToolsError, PDALPipelineError):
             point_count = 0
 
         logger.debug(f"Processing node {node_id} at depth {depth}, points: {point_count}")
@@ -118,7 +120,7 @@ class OctreeBuilder:
                         if os.path.exists(child_output):
                             os.remove(child_output)
 
-                except LasToolsError as e:
+                except (LasToolsError, PDALPipelineError) as e:
                     logger.warning(f"Failed to process octant {child_node_id}: {e}")
 
         is_leaf = not should_split or len(children_ids) == 0

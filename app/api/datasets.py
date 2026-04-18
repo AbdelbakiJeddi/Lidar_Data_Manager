@@ -15,6 +15,7 @@ from app.api.dependencies import get_db, get_minio
 from app.models import Dataset, OctreeProcessRequest
 from app.repositories import DatasetRepository, OctreeNodeRepository
 from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file
+from app.services.pdal_processor import PDALProcessor, PDALPipelineError
 from app.services.las_tools_processor import LasToolsProcessor, LasToolsError
 from app.services.octree_builder import OctreeBuilder
 
@@ -29,7 +30,9 @@ async def upload_lidar(
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
     """Upload a LiDAR file (LAS/LAZ) to storage."""
-    if not file.filename.lower().endswith((".las", ".laz")):
+    from pathlib import Path
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".las", ".laz"):
         raise HTTPException(status_code=400, detail="Only .las or .laz files are allowed")
 
     dataset_repo = DatasetRepository(db)
@@ -91,7 +94,8 @@ async def process_lidar(
     background_tasks.add_task(
         _process_octree_background,
         dataset_id, dataset.object_name,
-        request.max_depth, request.point_threshold
+        request.max_depth, request.point_threshold,
+        db, minio_client
     )
 
     return {
@@ -101,22 +105,15 @@ async def process_lidar(
     }
 
 
-def _process_octree_background(
+async def _process_octree_background(
     dataset_id: str,
     object_name: str,
     max_depth: int,
-    point_threshold: int
+    point_threshold: int,
+    db: AsyncIOMotorDatabase,
+    minio_client: Minio
 ):
     """Background task for octree processing."""
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    from app.core.mongo_client import get_database
-    from app.core.minio_client import get_minio_client
-
-    db = loop.run_until_complete(get_database())
-    minio_client = get_minio_client()
     dataset_repo = DatasetRepository(db)
     node_repo = OctreeNodeRepository(db)
 
@@ -131,28 +128,19 @@ def _process_octree_background(
         nodes = builder.build_octree(object_name, input_in_minio=True, source_bucket=BUCKET_RAW)
         stats = builder.get_stats()
 
-        loop.run_until_complete(
-            node_repo.create_many(dataset_id, nodes)
-        )
-        loop.run_until_complete(
-            dataset_repo.update_status(
-                dataset_id,
-                "completed",
-                point_count=stats["total_points"],
-                node_count=stats["total_nodes"]
-            )
+        await node_repo.create_many(dataset_id, nodes)
+        await dataset_repo.update_status(
+            dataset_id,
+            "completed",
+            point_count=stats["total_points"],
+            node_count=stats["total_nodes"]
         )
 
         builder.cleanup()
 
     except Exception as e:
         logger.error(f"Octree processing failed: {e}")
-        loop.run_until_complete(
-            dataset_repo.update_status(dataset_id, "failed", error=str(e))
-        )
-
-    finally:
-        loop.close()
+        await dataset_repo.update_status(dataset_id, "failed", error=str(e))
 
 
 @router.get("/datasets")
@@ -214,7 +202,7 @@ async def get_lidar_info(
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
-    """Get LiDAR file info using LasTools."""
+    """Get LiDAR file info using PDAL (with LasTools fallback)."""
     dataset_repo = DatasetRepository(db)
     dataset = await dataset_repo.get(dataset_id)
 
@@ -226,11 +214,25 @@ async def get_lidar_info(
 
     try:
         minio_download_file(minio_client, BUCKET_RAW, dataset.object_name, tmp_path)
+
+        # Try PDAL first
+        processor = PDALProcessor()
+        if processor.use_pdal:
+            try:
+                info = processor.get_info(tmp_path)
+                info["backend"] = "pdal"
+                return info
+            except PDALPipelineError as e:
+                logger.warning(f"PDAL failed, falling back to LAStools: {e}")
+
+        # Fallback to LAStools
         lastools = LasToolsProcessor()
         info = lastools.get_info(tmp_path)
+        info["backend"] = "lastools"
         return info
-    except LasToolsError as e:
-        raise HTTPException(status_code=500, detail=f"LasTools error: {e}")
+
+    except (LasToolsError, PDALPipelineError) as e:
+        raise HTTPException(status_code=500, detail=f"Processing error: {e}")
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

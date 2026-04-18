@@ -9,14 +9,11 @@ from minio import Minio
 
 from app.core.metadata_models import OctreeNode, BoundingBox
 from app.core.minio_client import upload_local_file
+from app.core.settings import LASTOOLS_BIN
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Path to LAStools binary directory
-# This should be configurable via env or settings, but hardcoded for current env consistency
-LASTOOLS_BIN = "/home/abok/lastools/bin"
 
 class LAStoolsWrapper:
     """Wrapper for LAStools CLI commands to perform point cloud operations."""
@@ -65,13 +62,13 @@ class LAStoolsWrapper:
             str(bbox.min_x), str(bbox.min_y), str(bbox.min_z),
             str(bbox.max_x), str(bbox.max_y), str(bbox.max_z)
         ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
 
     @staticmethod
     def optimize(input_file: str, output_file: str):
         """Uses lasoptimize to compress and optimize the LAZ file."""
         cmd = [os.path.join(LASTOOLS_BIN, "lasoptimize64"), "-i", input_file, "-o", output_file]
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
 
 class OctreeProcessor:
     """

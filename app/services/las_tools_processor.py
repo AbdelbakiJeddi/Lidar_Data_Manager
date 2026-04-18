@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from app.core.metadata_models import BoundingBox
+from app.core.settings import LASTOOLS_BIN
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class LasToolsProcessor:
     """
     
     def __init__(self, lastools_path: str = None):
-        self.lastools_path = lastools_path or os.environ.get("LASTOOLS_PATH", "/opt/LAStools/bin")
+        self.lastools_path = lastools_path or LASTOOLS_BIN
     
     def _run_command(self, tool: str, args: List[str]) -> str:
         """

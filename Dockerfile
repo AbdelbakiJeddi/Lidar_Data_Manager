@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# Install LasTools (native Linux binaries)
+# Install PDAL and LAStools (native Linux binaries)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
+    pdal \
+    libpdal-dev \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt \
     && cd /opt \
@@ -12,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV LASTOOLS_PATH="/opt/LAStools/bin"
 ENV PATH="${LASTOOLS_PATH}:${PATH}"
+ENV PDAL_ENABLED="true"
 
 WORKDIR /app
 

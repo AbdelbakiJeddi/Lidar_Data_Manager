@@ -30,3 +30,15 @@ async def ensure_indexes(db):
     await db.datasets.create_index("object_name", unique=True)
     await db.octree_nodes.create_index([("dataset_id", 1), ("depth", 1)])
     await db.octree_nodes.create_index([("dataset_id", 1), ("node_id", 1)], unique=True)
+
+
+async def check_mongo_health() -> dict:
+    """Check MongoDB connection health."""
+    try:
+        client = get_mongo_client()
+        await client.admin.command("ping")
+        return {"status": "healthy", "uri": MONGO_URI}
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"MongoDB health check failed: {e}")
+        return {"status": "unhealthy", "error": str(e)}
