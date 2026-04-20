@@ -16,7 +16,6 @@ from app.models import Dataset, OctreeProcessRequest
 from app.repositories import DatasetRepository, OctreeNodeRepository
 from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file
 from app.services.pdal_processor import PDALProcessor, PDALPipelineError
-from app.services.las_tools_processor import LasToolsProcessor, LasToolsError
 from app.services.octree_builder import OctreeBuilder
 
 logger = logging.getLogger(__name__)
@@ -202,7 +201,7 @@ async def get_lidar_info(
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
-    """Get LiDAR file info using PDAL (with LasTools fallback)."""
+    """Get LiDAR file info using PDAL."""
     dataset_repo = DatasetRepository(db)
     dataset = await dataset_repo.get(dataset_id)
 
@@ -215,23 +214,12 @@ async def get_lidar_info(
     try:
         minio_download_file(minio_client, BUCKET_RAW, dataset.object_name, tmp_path)
 
-        # Try PDAL first
         processor = PDALProcessor()
-        if processor.use_pdal:
-            try:
-                info = processor.get_info(tmp_path)
-                info["backend"] = "pdal"
-                return info
-            except PDALPipelineError as e:
-                logger.warning(f"PDAL failed, falling back to LAStools: {e}")
-
-        # Fallback to LAStools
-        lastools = LasToolsProcessor()
-        info = lastools.get_info(tmp_path)
-        info["backend"] = "lastools"
+        info = processor.get_info(tmp_path)
+        info["backend"] = "pdal"
         return info
 
-    except (LasToolsError, PDALPipelineError) as e:
+    except PDALPipelineError as e:
         raise HTTPException(status_code=500, detail=f"Processing error: {e}")
     finally:
         if os.path.exists(tmp_path):

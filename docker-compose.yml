@@ -51,5 +51,6 @@ services:
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: fastapi-bucket
       MONGO_URI: mongodb://root:rootpassword@mongodb:27017
+      PDAL_BIN: pdal
     volumes:
       - ./app:/app/app

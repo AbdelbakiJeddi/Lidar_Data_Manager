@@ -1,6 +1,6 @@
 """PDAL-based point cloud processor.
 
-Uses native PDAL pipelines instead of LAStools CLI for point cloud operations.
+Uses native PDAL pipelines for point cloud operations.
 """
 
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.core.metadata_models import BoundingBox
-from app.core.settings import PDAL_ENABLED
+from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,35 +28,40 @@ class PDALProcessor:
     - Octant processing (process_octant)
     """
 
-    def __init__(self, use_pdal: bool = None):
+    def __init__(self, require_available: bool = True):
         """
         Initialize PDAL processor.
 
         Args:
-            use_pdal: Force PDAL usage. If None, uses PDAL_ENABLED env var.
+            require_available: If True, raise when PDAL is unavailable.
         """
-        self.use_pdal = use_pdal if use_pdal is not None else PDAL_ENABLED
-        self._check_pdal_available()
+        settings = get_settings()
+        self.pdal_bin = settings.pdal_bin
+        self.pdal_version = self._check_pdal_available(require_available=require_available)
 
-    def _check_pdal_available(self) -> None:
-        """Check if PDAL is available on the system."""
-        if not self.use_pdal:
-            logger.info("PDAL disabled, falling back to LAStools")
-            return
+    def _check_pdal_available(self, require_available: bool = True) -> Optional[str]:
+        """Check if PDAL is available on the system and return version."""
 
         try:
             result = subprocess.run(
-                ["pdal", "--version"],
+                [self.pdal_bin, "--version"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             if result.returncode != 0:
-                logger.warning(f"PDAL binary not functional: {result.stderr}")
-                self.use_pdal = False
+                msg = f"PDAL binary not functional: {result.stderr.strip()}"
+                if require_available:
+                    raise PDALPipelineError(msg)
+                logger.warning(msg)
+                return None
+            return result.stdout.strip()
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.warning(f"PDAL not available: {e}")
-            self.use_pdal = False
+            msg = f"PDAL not available: {e}"
+            if require_available:
+                raise PDALPipelineError(msg) from e
+            logger.warning(msg)
+            return None
 
     def _run_pipeline(self, pipeline: Dict[str, Any]) -> Any:
         """
@@ -74,7 +79,7 @@ class PDALProcessor:
 
         try:
             result = subprocess.run(
-                ["pdal", "pipeline", pipeline_file],
+                [self.pdal_bin, "pipeline", pipeline_file],
                 capture_output=True,
                 text=True,
                 timeout=300
@@ -100,37 +105,73 @@ class PDALProcessor:
         Returns:
             Dictionary with point_count, bbox, srs, and metadata
         """
-        pipeline = {
-            "pipeline": [
-                input_file,
-                {
-                    "type": "filters.info"
-                }
-            ]
-        }
-
         try:
-            output = self._run_pipeline(pipeline)
-            info = json.loads(output)
+            result = subprocess.run(
+                [self.pdal_bin, "info", "--metadata", "--summary", input_file],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                raise PDALPipelineError(f"pdal info failed: {result.stderr.strip()}")
 
-            bounds = info.get("bounds", {})
+            info = json.loads(result.stdout)
+            metadata = info.get("metadata", {})
+            summary = info.get("summary", {})
+            bounds = summary.get("bounds", {})
+
+            count = self._extract_point_count(metadata, summary)
+            bbox = self._extract_bbox(bounds)
+
             return {
-                "point_count": info.get("count", 0),
-                "bbox": {
-                    "min_x": bounds.get("X", {}).get("minimum", 0.0),
-                    "min_y": bounds.get("Y", {}).get("minimum", 0.0),
-                    "min_z": bounds.get("Z", {}).get("minimum", 0.0),
-                    "max_x": bounds.get("X", {}).get("maximum", 0.0),
-                    "max_y": bounds.get("Y", {}).get("maximum", 0.0),
-                    "max_z": bounds.get("Z", {}).get("maximum", 0.0),
-                },
-                "srs": info.get("srs", {}),
-                "metadata": info
+                "point_count": int(count),
+                "bbox": bbox,
+                "srs": summary.get("srs", {}),
+                "metadata": info,
             }
-
-        except (json.JSONDecodeError, PDALPipelineError) as e:
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError) as e:
             logger.error(f"PDAL get_info failed: {e}")
             raise PDALPipelineError(f"Failed to extract metadata: {e}") from e
+
+    def _extract_point_count(self, metadata: Dict[str, Any], summary: Dict[str, Any]) -> int:
+        """Extract point count from multiple PDAL info output variants."""
+        candidates = [
+            metadata.get("count"),
+            summary.get("num_points"),
+            metadata.get("readers.las", {}).get("count"),
+        ]
+        for value in candidates:
+            if value is not None:
+                return int(value)
+        return 0
+
+    def _extract_bbox(self, bounds: Dict[str, Any]) -> Dict[str, float]:
+        """Extract bbox from multiple PDAL summary bounds formats."""
+        if {"minx", "miny", "minz", "maxx", "maxy", "maxz"}.issubset(bounds.keys()):
+            return {
+                "min_x": float(bounds["minx"]),
+                "min_y": float(bounds["miny"]),
+                "min_z": float(bounds["minz"]),
+                "max_x": float(bounds["maxx"]),
+                "max_y": float(bounds["maxy"]),
+                "max_z": float(bounds["maxz"]),
+            }
+
+        x = bounds.get("X", {})
+        y = bounds.get("Y", {})
+        z = bounds.get("Z", {})
+        return {
+            "min_x": float(x.get("minimum", 0.0)),
+            "min_y": float(y.get("minimum", 0.0)),
+            "min_z": float(z.get("minimum", 0.0)),
+            "max_x": float(x.get("maximum", 0.0)),
+            "max_y": float(y.get("maximum", 0.0)),
+            "max_z": float(z.get("maximum", 0.0)),
+        }
+
+    def get_point_count(self, input_file: str) -> int:
+        """Return the number of points from a point cloud file."""
+        return int(self.get_info(input_file).get("point_count", 0))
 
     def crop_to_bbox(
         self,

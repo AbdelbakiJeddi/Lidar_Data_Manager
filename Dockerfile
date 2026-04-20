@@ -1,25 +1,18 @@
-FROM python:3.12-slim
+FROM continuumio/miniconda3:latest
 
-# Install PDAL and LAStools (native Linux binaries)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    pdal \
-    libpdal-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /opt \
-    && cd /opt \
-    && wget -q https://downloads.rapidlasso.de/LAStools.tar.gz \
-    && tar -xzf LAStools.tar.gz \
-    && rm LAStools.tar.gz
+# Install PDAL from conda-forge (officially supported distribution channel).
+RUN conda install -n base -c conda-forge -y pdal \
+    && conda clean -afy
 
-ENV LASTOOLS_PATH="/opt/LAStools/bin"
-ENV PATH="${LASTOOLS_PATH}:${PATH}"
-ENV PDAL_ENABLED="true"
+ENV PDAL_BIN="pdal"
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Fail image build early if PDAL CLI isn't available.
+RUN pdal --version
 
 COPY app ./app
 

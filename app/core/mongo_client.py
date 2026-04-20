@@ -1,9 +1,11 @@
-import os
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
+from app.core.settings import get_settings
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://root:rootpassword@mongodb:27017")
-DB_NAME = os.getenv("DB_NAME", "lidar_db")
+_settings = get_settings()
+MONGO_URI = _settings.mongo_uri
+DB_NAME = _settings.mongo_db_name
 
 _client: AsyncIOMotorClient = None
 
@@ -17,6 +19,14 @@ def get_mongo_client() -> AsyncIOMotorClient:
 
 def get_sync_mongo_client() -> MongoClient:
     return MongoClient(MONGO_URI)
+
+
+def close_mongo_client() -> None:
+    """Close async Mongo client if it was initialized."""
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
 
 
 async def get_database():

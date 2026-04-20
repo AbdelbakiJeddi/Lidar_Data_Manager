@@ -6,7 +6,7 @@ FastAPI service for managing LiDAR point cloud data with octree-based hierarchic
 
 This service provides:
 - **Upload**: Stream LAZ/LAS files to MinIO object storage
-- **Process**: Build hierarchical octree structures using LasTools
+- **Process**: Build hierarchical octree structures using PDAL
 - **Store**: Raw data in MinIO, metadata in MongoDB
 - **Serve**: Query and download octree nodes via REST API
 
@@ -37,8 +37,8 @@ docker compose up --build
                      └─────────────┘
                             │
                      ┌──────┴──────┐
-                     │   LasTools    │
-                     │  (via Wine)   │
+                    │     PDAL      │
+                    │   (native)    │
                      └─────────────┘
 ```
 
@@ -123,6 +123,21 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+## Docker-Only PDAL Setup
+
+If you do not want PDAL installed on your host machine, use only Docker:
+
+```bash
+# Build server image (fails fast if PDAL is not available in image)
+docker compose build web
+
+# Start services
+docker compose up -d
+
+# Verify PDAL inside the running container
+docker compose exec web pdal --version
+```
+
 ## Testing
 
 ```bash
@@ -141,7 +156,7 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for full testing guide.
 - **API**: FastAPI + Pydantic
 - **Storage**: MinIO (S3-compatible)
 - **Database**: MongoDB + Motor (async)
-- **Processing**: LasTools (via Wine)
+- **Processing**: PDAL (CLI)
 - **Runtime**: Python 3.12, Docker
 
 ## Troubleshooting

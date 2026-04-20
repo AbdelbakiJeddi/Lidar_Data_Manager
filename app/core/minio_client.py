@@ -5,24 +5,23 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from minio import Minio
 from minio.error import S3Error
+from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-BUCKET_RAW = "lidar-raw"
-BUCKET_PROCESSED = "lidar-processed"
+_settings = get_settings()
+BUCKET_RAW = _settings.minio_bucket_raw
+BUCKET_PROCESSED = _settings.minio_bucket_processed
 
 
 def get_minio_client() -> Minio:
-    endpoint = os.getenv("MINIO_ENDPOINT", "127.0.0.1:9000")
-    access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-    secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    secure = os.getenv("MINIO_SECURE", "false").lower() in ("1", "true", "yes")
+    settings = get_settings()
 
     return Minio(
-        endpoint,
-        access_key=access_key,
-        secret_key=secret_key,
-        secure=secure,
+        settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        secure=settings.minio_secure,
     )
 
 
@@ -68,8 +67,9 @@ def download_file(
 
 
 def get_object_url(client: Minio, bucket_name: str, object_name: str) -> str:
-    endpoint = os.getenv("MINIO_ENDPOINT", "127.0.0.1:9000")
-    return f"http://{endpoint}/{bucket_name}/{object_name}"
+    settings = get_settings()
+    scheme = "https" if settings.minio_secure else "http"
+    return f"{scheme}://{settings.minio_endpoint}/{bucket_name}/{object_name}"
 
 
 def list_objects(client: Minio, bucket_name: str, prefix: str = "") -> list:

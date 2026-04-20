@@ -12,7 +12,6 @@ from minio import Minio
 from app.models import BoundingBox, OctreeNode
 from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, upload_local_file, download_file
 from app.services.pdal_processor import PDALProcessor, PDALPipelineError
-from app.services.las_tools_processor import LasToolsProcessor, LasToolsError
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +23,14 @@ class OctreeBuilder:
         dataset_id: str,
         max_depth: int = 8,
         point_threshold: int = 1_000_000,
-        temp_dir: str = None
+        temp_dir: Optional[str] = None
     ):
         self.minio_client = minio_client
         self.dataset_id = dataset_id
         self.max_depth = max_depth
         self.point_threshold = point_threshold
         self.pdal = PDALProcessor()
-        self.lastools = LasToolsProcessor()  # Fallback
+        self.processor = self.pdal
         self.temp_dir = temp_dir or tempfile.mkdtemp(prefix=f"octree_{dataset_id}_")
         self.nodes: List[OctreeNode] = []
 
@@ -64,7 +63,7 @@ class OctreeBuilder:
             download_file(self.minio_client, source_bucket, input_file, local_input)
             logger.info(f"Downloaded source file to {local_input}")
 
-        info = self.pdal.get_info(local_input)
+        info = self.processor.get_info(local_input)
         root_bbox = BoundingBox(**info["bbox"])
         root_point_count = info["point_count"]
 
@@ -84,8 +83,8 @@ class OctreeBuilder:
         parent_id: Optional[str]
     ) -> OctreeNode:
         try:
-            point_count = self.pdal.get_point_count(input_file)
-        except (LasToolsError, PDALPipelineError):
+            point_count = self.processor.get_point_count(input_file)
+        except PDALPipelineError:
             point_count = 0
 
         logger.debug(f"Processing node {node_id} at depth {depth}, points: {point_count}")
@@ -101,10 +100,10 @@ class OctreeBuilder:
                 child_output = os.path.join(self.temp_dir, f"node_{child_node_id}.laz")
 
                 try:
-                    self.pdal.process_octant(input_file, child_output, child_bbox)
+                    self.processor.process_octant(input_file, child_output, child_bbox)
 
                     if os.path.exists(child_output) and os.path.getsize(child_output) > 0:
-                        child_point_count = self.pdal.get_point_count(child_output)
+                        child_point_count = self.processor.get_point_count(child_output)
 
                         if child_point_count > 0:
                             child_node = self._process_node(
@@ -120,7 +119,7 @@ class OctreeBuilder:
                         if os.path.exists(child_output):
                             os.remove(child_output)
 
-                except (LasToolsError, PDALPipelineError) as e:
+                except PDALPipelineError as e:
                     logger.warning(f"Failed to process octant {child_node_id}: {e}")
 
         is_leaf = not should_split or len(children_ids) == 0

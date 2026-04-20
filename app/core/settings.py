@@ -1,18 +1,45 @@
-"""Centralized application settings."""
+"""Centralized application settings.
 
-import os
+This module provides typed settings loaded from environment variables and keeps
+legacy module-level constants for compatibility with existing imports.
+"""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# LAStools binary path - configurable via environment variable
-LASTOOLS_BIN = os.environ.get("LASTOOLS_BIN", "/opt/LAStools/bin")
+class Settings(BaseSettings):
+    """Application configuration loaded from environment variables."""
 
-# PDAL settings
-PDAL_ENABLED = os.environ.get("PDAL_ENABLED", "false").lower() == "true"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-# MinIO bucket names
-BUCKET_RAW = os.environ.get("MINIO_BUCKET_RAW", "lidar-raw")
-BUCKET_PROCESSED = os.environ.get("MINIO_BUCKET_PROCESSED", "lidar-processed")
+    minio_endpoint: str = "127.0.0.1:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_secure: bool = False
+    minio_bucket_raw: str = "lidar-raw"
+    minio_bucket_processed: str = "lidar-processed"
 
-# Octree processing defaults
-OCTREE_MAX_DEPTH = int(os.environ.get("OCTREE_MAX_DEPTH", "8"))
-OCTREE_POINT_THRESHOLD = int(os.environ.get("OCTREE_POINT_THRESHOLD", "1000000"))
+    mongo_uri: str = "mongodb://root:rootpassword@mongodb:27017"
+    mongo_db_name: str = "lidar_db"
+
+    pdal_bin: str = "pdal"
+
+    octree_max_depth: int = 8
+    octree_point_threshold: int = 1_000_000
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return a cached settings instance."""
+    return Settings()
+
+
+# Backward-compatible constants.
+_settings = get_settings()
+
+BUCKET_RAW = _settings.minio_bucket_raw
+BUCKET_PROCESSED = _settings.minio_bucket_processed
+OCTREE_MAX_DEPTH = _settings.octree_max_depth
+OCTREE_POINT_THRESHOLD = _settings.octree_point_threshold
