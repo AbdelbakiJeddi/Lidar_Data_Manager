@@ -1,8 +1,8 @@
-FROM continuumio/miniconda3:latest
+FROM condaforge/miniforge3:latest
 
-# Install PDAL from conda-forge (officially supported distribution channel).
-RUN conda install -n base -c conda-forge -y pdal \
-    && conda clean -afy
+# Install PDAL using mamba (much faster C++ solver, guarantees conda-forge compatibility).
+RUN mamba install -y pdal \
+    && mamba clean -afy
 
 ENV PDAL_BIN="pdal"
 
