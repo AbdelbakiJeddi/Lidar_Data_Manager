@@ -1,6 +1,6 @@
 """Octree node model definitions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -33,7 +33,7 @@ class OctreeNodeDocument(BaseModel):
     bbox: BoundingBox
     minio_path: str
     children: List[str] = []
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_mongo(self) -> Dict[str, Any]:
         """Convert to MongoDB document format."""

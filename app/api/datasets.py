@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, Depends
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
@@ -25,6 +25,7 @@ router = APIRouter(prefix="/lidar", tags=["datasets"])
 @router.post("/upload")
 async def upload_lidar(
     file: UploadFile = File(...),
+    dataset_name: str = Form(...),
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
@@ -35,8 +36,8 @@ async def upload_lidar(
         raise HTTPException(status_code=400, detail="Only .las or .laz files are allowed")
 
     dataset_repo = DatasetRepository(db)
-    dataset_id = str(uuid.uuid4())[:8]
-    object_name = f"{dataset_id}/{file.filename}"
+    file_id = str(uuid.uuid4())[:8]
+    object_name = f"uploads/{dataset_name}/{file_id}/{file.filename}"
 
     try:
         minio_client.put_object(
@@ -52,6 +53,7 @@ async def upload_lidar(
 
     stat = minio_client.stat_object(BUCKET_RAW, object_name)
     dataset = await dataset_repo.create(
+        dataset_name=dataset_name,
         filename=file.filename,
         object_name=object_name,
         size=stat.size
@@ -144,13 +146,29 @@ async def _process_octree_background(
 
 @router.get("/datasets")
 async def list_datasets(
+    dataset_name: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> dict:
-    """List all datasets."""
+    """List datasets, optionally filtered by group name."""
     dataset_repo = DatasetRepository(db)
-    datasets = await dataset_repo.list_all()
+    if dataset_name:
+        datasets = await dataset_repo.get_by_dataset_name(dataset_name)
+    else:
+        datasets = await dataset_repo.list_all()
     return {
         "datasets": [d.model_dump() for d in datasets]
+    }
+
+
+@router.get("/dataset-groups")
+async def list_dataset_groups(
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> dict:
+    """List all unique dataset group names."""
+    dataset_repo = DatasetRepository(db)
+    groups = await dataset_repo.list_unique_datasets()
+    return {
+        "groups": groups
     }
 
 

@@ -1,6 +1,6 @@
 """Dataset model definitions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -9,20 +9,24 @@ from .bounding_box import BoundingBox
 
 
 class Dataset(BaseModel):
-    """Represents a LiDAR dataset in MongoDB."""
+    """Represents a tracked MinIO object stored in MongoDB."""
 
     id: str
+    dataset_name: str
     filename: str
     object_name: str
     size: int
     bucket: str = "lidar-raw"
+    content_type: Optional[str] = None
+    etag: Optional[str] = None
+    last_modified: Optional[datetime] = None
     status: str = "uploaded"  # uploaded, processing, completed, failed
     point_count: Optional[int] = None
     node_count: Optional[int] = None
     bbox: Optional[BoundingBox] = None
     error: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     processed_at: Optional[datetime] = None
 
     def to_mongo(self) -> Dict[str, Any]:
