@@ -49,7 +49,7 @@ class OctreeNodeRepository:
         query = {"dataset_id": dataset_id}
         if depth is not None:
             query["depth"] = depth
-        cursor = self.collection.find(query).sort("depth", 1)
+        cursor = self.collection.find(query, {"_id": 0}).sort("depth", 1)
         return [doc async for doc in cursor]
 
     async def get_node(self, dataset_id: str, node_id: str) -> Optional[Dict[str, Any]]:
