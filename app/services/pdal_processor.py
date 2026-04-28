@@ -82,7 +82,7 @@ class PDALProcessor:
                 [self.pdal_bin, "pipeline", pipeline_file],
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=3600
             )
 
             if result.returncode != 0:
@@ -107,7 +107,7 @@ class PDALProcessor:
         """
         try:
             result = subprocess.run(
-                [self.pdal_bin, "info", "--metadata", "--summary", input_file],
+                [self.pdal_bin, "info", "--summary", input_file],
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -194,11 +194,11 @@ class PDALProcessor:
             "pipeline": [
                 input_file,
                 {
-                    "type": "filters.crop",
-                    "bounds": (
-                        f"([{bbox.min_x}, {bbox.max_x}],"
-                        f"[{bbox.min_y}, {bbox.max_y}],"
-                        f"[{bbox.min_z}, {bbox.max_z}])"
+                    "type": "filters.expression",
+                    "expression": (
+                        f"X >= {bbox.min_x} && X < {bbox.max_x} && "
+                        f"Y >= {bbox.min_y} && Y < {bbox.max_y} && "
+                        f"Z >= {bbox.min_z} && Z < {bbox.max_z}"
                     )
                 },
                 {
@@ -329,6 +329,103 @@ class PDALProcessor:
             if os.path.exists(temp_file):
                 os.unlink(temp_file)
             return input_file
+
+    # ------------------------------------------------------------------ #
+    #  SPSLiDAR sampling methods (pure PDAL CLI pipelines)
+    # ------------------------------------------------------------------ #
+
+    def sample_nth(
+        self,
+        input_file: str,
+        output_file: str,
+        step: int,
+    ) -> int:
+        """Keep every *step*-th point (the node sample).
+
+        Uses native PDAL ``filters.decimation`` — all I/O runs in C++.
+
+        Args:
+            input_file:  Path to input LAZ/LAS file.
+            output_file: Path for sampled output file.
+            step:        Decimation step (keep every Nth point).
+
+        Returns:
+            Number of points written to *output_file*.
+        """
+        pipeline = {
+            "pipeline": [
+                input_file,
+                {"type": "filters.decimation", "step": step},
+                {
+                    "type": "writers.las",
+                    "filename": output_file,
+                    "compression": "true",
+                },
+            ]
+        }
+
+        try:
+            self._run_pipeline(pipeline)
+            return self.get_point_count(output_file)
+        except PDALPipelineError as e:
+            logger.error(f"PDAL sample_nth failed: {e}")
+            raise
+
+    def remainder_nth(
+        self,
+        input_file: str,
+        output_file: str,
+        step: int,
+    ) -> int:
+        """Drop every *step*-th point, keeping the remainder for children.
+
+        Builds a multi-reader pipeline that reads *input_file* ``step - 1``
+        times, each with a different ``offset`` (1 … step-1), then merges
+        the streams.  All I/O runs in PDAL's C++ engine.
+
+        Args:
+            input_file:  Path to input LAZ/LAS file.
+            output_file: Path for remainder output file.
+            step:        Decimation step (same value used in ``sample_nth``).
+
+        Returns:
+            Number of points written to *output_file*.
+        """
+        stages: list = []
+        tags: list = []
+
+        for i in range(1, step):
+            reader_tag = f"r{i}"
+            dec_tag = f"d{i}"
+            stages.append({
+                "type": "readers.las",
+                "filename": input_file,
+                "tag": reader_tag,
+            })
+            stages.append({
+                "type": "filters.decimation",
+                "step": step,
+                "offset": i,
+                "inputs": [reader_tag],
+                "tag": dec_tag,
+            })
+            tags.append(dec_tag)
+
+        stages.append({"type": "filters.merge", "inputs": tags})
+        stages.append({
+            "type": "writers.las",
+            "filename": output_file,
+            "compression": "true",
+        })
+
+        pipeline = {"pipeline": stages}
+
+        try:
+            self._run_pipeline(pipeline)
+            return self.get_point_count(output_file)
+        except PDALPipelineError as e:
+            logger.error(f"PDAL remainder_nth failed: {e}")
+            raise
 
 
 class PDALPipelineError(Exception):

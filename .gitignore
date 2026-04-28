@@ -1,6 +1,7 @@
 # Data directories
 /minio_data
 /mongo_data
+/dataset
 
 # Python
 __pycache__/

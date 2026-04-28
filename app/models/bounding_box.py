@@ -44,3 +44,18 @@ class BoundingBox(BaseModel):
                         )
                     )
         return octants
+
+    def with_margin(self, margin: float = 0.01) -> "BoundingBox":
+        """Return a new BoundingBox expanded by *margin* on every face.
+
+        This prevents floating-point exclusion errors when cropping points
+        that lie exactly on an octant boundary (SPSLiDAR convention).
+        """
+        return BoundingBox(
+            min_x=self.min_x - margin,
+            min_y=self.min_y - margin,
+            min_z=self.min_z - margin,
+            max_x=self.max_x + margin,
+            max_y=self.max_y + margin,
+            max_z=self.max_z + margin,
+        )
