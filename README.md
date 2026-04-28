@@ -65,7 +65,16 @@ curl -X POST "http://localhost:8000/lidar/process/abc123" \
   -d '{"max_depth": 3, "point_threshold": 10000}'
 ```
 
-### Get Nodes
+### Get Dataset Info
+
+```bash
+# File metadata + bbox
+curl "http://localhost:8000/lidar/datasets/abc123/info"
+
+# Response includes point_count, bbox (min/max x/y/z), SRS
+```
+
+### Get Octree Nodes
 
 ```bash
 # All nodes
@@ -74,32 +83,11 @@ curl "http://localhost:8000/lidar/datasets/abc123/nodes"
 # Filter by depth
 curl "http://localhost:8000/lidar/datasets/abc123/nodes?depth=2"
 
-# Download specific node
+# Get specific node metadata
+curl "http://localhost:8000/lidar/nodes/abc123/root"
+
+# Download specific node LAZ file
 curl "http://localhost:8000/lidar/nodes/abc123/0/download" -o node_0.laz
-```
-
-### Get Dataset Bounds (for 2D map footprint)
-
-```bash
-curl "http://localhost:8000/lidar/datasets/abc123/bounds"
-
-# Response:
-# {"dataset_id": "abc123", "bbox": [minx, miny, maxx, maxy]}
-```
-
-### Query by Bounding Box (for AOI selection)
-
-```bash
-curl -X POST "http://localhost:8000/lidar/datasets/abc123/query" \
-  -H "Content-Type: application/json" \
-  -d '{"bbox": [minx, miny, maxx, maxy], "max_nodes": 150}'
-
-# Response:
-# {
-#   "dataset_id": "abc123",
-#   "selected_nodes": 42,
-#   "nodes": [{"node_id": "0", "bbox": [...], "url": "https://..."}]
-# }
 ```
 
 ### Health Check
@@ -147,11 +135,11 @@ Environment variables (set in `docker-compose.yml`):
 
 ## Data Flow
 
-1. **Upload** → MinIO (`lidar-raw` bucket) + MongoDB (dataset metadata)
-2. **Process** → Background task reads from MinIO, builds octree with SPSLiDAR algorithm
-3. **Store** → Nodes saved to MinIO (`lidar-processed` bucket) + MongoDB
-4. **Query** → API queries MongoDB metadata, returns presigned URLs from MinIO
-5. **Visualize** → Potree loads COPC/LAZ data via presigned URLs
+1. **Upload** → MinIO (`lidar-raw` bucket) + MongoDB (dataset metadata, status=`uploaded`)
+2. **Process** → Background task reads from MinIO, builds octree with SPSLiDAR algorithm, uploads node files to `lidar-processed` bucket
+3. **Store** → Nodes saved to MinIO + MongoDB (metadata)
+4. **Query** → Nodes retrieved from MongoDB, files downloadable from MinIO
+5. **Visualize** → Potree loads LAZ data via `/nodes/{dataset_id}/{node_id}/download` endpoint
 
 ## Development
 
@@ -203,15 +191,22 @@ curl -X POST "http://localhost:8000/lidar/upload" \
   -F "file=@test.laz" \
   -F "dataset_name=test_dataset"
 
-# 4. Build octree
+# 4. Get file info
+curl "http://localhost:8000/lidar/datasets/{dataset_id}/info"
+
+# 5. Build octree
 curl -X POST "http://localhost:8000/lidar/process/{dataset_id}" \
   -H "Content-Type: application/json" \
   -d '{"max_depth": 8, "point_threshold": 10000}'
 
-# 5. Query nodes
+# 6. Query nodes
 curl "http://localhost:8000/lidar/datasets/{dataset_id}/nodes"
+curl "http://localhost:8000/lidar/datasets/{dataset_id}/nodes?depth=2"
 
-# 6. Download node
+# 7. Get specific node metadata
+curl "http://localhost:8000/lidar/nodes/{dataset_id}/0"
+
+# 8. Download node
 curl "http://localhost:8000/lidar/nodes/{dataset_id}/0/download" -o node.laz
 ```
 
@@ -239,6 +234,11 @@ A single-page web viewer is planned for v2:
 - 2D map footprint display
 - Draw/select area of interest
 - Load selected nodes in Potree viewer
+
+**Implemented API for visualization:**
+- `GET /lidar/datasets/{id}/nodes` — lists all nodes with bbox and point count
+- `GET /lidar/nodes/{dataset_id}/{node_id}/download` — serves the raw LAZ file for a node
+- `GET /lidar/datasets/{id}/info` — bbox + SRS for map placement
 
 See [docs/frontend_potree_task.md](docs/frontend_potree_task.md) for implementation plan.
 
