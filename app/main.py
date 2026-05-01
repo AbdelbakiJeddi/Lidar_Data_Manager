@@ -2,6 +2,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import datasets_router, nodes_router, health_router
 from app.core.minio_client import ensure_buckets, get_minio_client
@@ -35,6 +36,14 @@ app = FastAPI(
     description="API for managing LiDAR point cloud data with octree processing",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, restrict this
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

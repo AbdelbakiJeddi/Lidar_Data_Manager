@@ -10,6 +10,7 @@ Python only orchestrates the pipeline JSON and manages temp files.
 """
 
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -95,7 +96,12 @@ class OctreeBuilder:
         logger.info(f"Root bbox: {root_bbox}, points: {root_point_count}")
 
         self._process_node(
-            local_input, root_bbox, depth=0, node_id="root", parent_id=None
+            local_input,
+            root_bbox,
+            depth=0,
+            node_id="root",
+            parent_id=None,
+            point_count=root_point_count,
         )
 
         logger.info(f"Octree built. Total nodes: {len(self.nodes)}")
@@ -112,13 +118,15 @@ class OctreeBuilder:
         depth: int,
         node_id: str,
         parent_id: Optional[str],
+        point_count: Optional[int] = None,
     ) -> OctreeNode:
         """Process a single octree node using SPSLiDAR sampling logic."""
 
-        try:
-            point_count = self.processor.get_point_count(input_file)
-        except PDALPipelineError:
-            point_count = 0
+        if point_count is None:
+            try:
+                point_count = self.processor.get_point_count(input_file)
+            except PDALPipelineError:
+                point_count = 0
 
         logger.debug(
             f"Processing node {node_id} at depth {depth}, points: {point_count}"
@@ -142,7 +150,8 @@ class OctreeBuilder:
             return node
 
         # ---- Recursive step: sample + partition remainder ---- #
-        step = max(point_count // self.point_threshold, 2)
+        threshold = max(self.point_threshold, 1)
+        step = max(math.ceil(point_count / threshold), 2)
 
         sampled_file = os.path.join(self.temp_dir, f"sampled_{node_id}.laz")
         remainder_file = os.path.join(self.temp_dir, f"remainder_{node_id}.laz")
@@ -168,9 +177,13 @@ class OctreeBuilder:
             child_file = os.path.join(self.temp_dir, f"octant_{child_node_id}.laz")
 
             try:
-                # Use exact child bbox — PDAL filters.crop uses inclusive
-                # bounds so points on the split plane are captured.
-                self.processor.crop_to_bbox(remainder_file, child_file, child_bbox)
+                # Expand bbox slightly to avoid float-boundary exclusions
+                # (SPSLiDAR convention).
+                self.processor.crop_to_bbox(
+                    remainder_file,
+                    child_file,
+                    child_bbox.with_margin(BBOX_MARGIN),
+                )
 
                 if os.path.exists(child_file) and os.path.getsize(child_file) > 0:
                     child_point_count = self.processor.get_point_count(child_file)
@@ -182,6 +195,7 @@ class OctreeBuilder:
                             depth + 1,
                             child_node_id,
                             node_id,
+                            point_count=child_point_count,
                         )
                         children_ids.append(child_node_id)
 
