@@ -55,3 +55,21 @@ class OctreeNodeRepository:
     async def get_node(self, dataset_id: str, node_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific node by dataset and node ID."""
         return await self.collection.find_one({"dataset_id": dataset_id, "node_id": node_id})
+
+    async def get_nodes_in_bbox(self, dataset_id: str, bbox: Any) -> List[Dict[str, Any]]:
+        """Get all nodes whose bbox intersects with the given AOI."""
+        from app.models.bounding_box import BoundingBox
+        if not isinstance(bbox, BoundingBox):
+            bbox = BoundingBox(**bbox)
+
+        query = {
+            "dataset_id": dataset_id,
+            "bbox.max_x": {"$gt": bbox.min_x},
+            "bbox.min_x": {"$lt": bbox.max_x},
+            "bbox.max_y": {"$gt": bbox.min_y},
+            "bbox.min_y": {"$lt": bbox.max_y},
+            "bbox.max_z": {"$gt": bbox.min_z},
+            "bbox.min_z": {"$lt": bbox.max_z},
+        }
+        cursor = self.collection.find(query, {"_id": 0}).sort("depth", 1)
+        return [doc async for doc in cursor]

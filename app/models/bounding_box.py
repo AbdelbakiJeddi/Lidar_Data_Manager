@@ -59,3 +59,11 @@ class BoundingBox(BaseModel):
             max_y=self.max_y + margin,
             max_z=self.max_z + margin,
         )
+
+    def intersects(self, other: "BoundingBox") -> bool:
+        """Check if this bounding box intersects with another."""
+        return not (
+            self.max_x <= other.min_x or self.min_x >= other.max_x or
+            self.max_y <= other.min_y or self.min_y >= other.max_y or
+            self.max_z <= other.min_z or self.min_z >= other.max_z
+        )
