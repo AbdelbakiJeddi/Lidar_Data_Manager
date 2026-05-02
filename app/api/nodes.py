@@ -62,58 +62,75 @@ async def get_node_info(
     return node
 
 
+from pydantic import BaseModel
+from typing import List, Tuple
+
+class PolygonZoneRequest(BaseModel):
+    """Request body for polygon-based zone extraction."""
+    coordinates: List[List[float]]  # [[lon, lat], [lon, lat], ...]
+    min_z: float = -1e10
+    max_z: float = 1e10
+
+
 @router.post("/{dataset_id}/zone")
 async def download_zone(
     dataset_id: str,
-    bbox: BoundingBox,
+    request: PolygonZoneRequest,
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> Response:
     """
-    Download merged point cloud for a specific zone.
+    Download merged point cloud cropped to an arbitrary polygon.
     
-    If the provided bbox is in Lat/Long (geographic), it is reprojected
-    to the dataset's native SRS before processing.
+    Coordinates are provided as [[lon, lat], ...] in geographic (WGS84).
+    They are automatically reprojected to the dataset's native SRS.
     """
     node_repo = OctreeNodeRepository(db)
     dataset_repo = DatasetRepository(db)
 
-    # Validate dataset exists
     dataset = await dataset_repo.get(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
 
-    # Handle coordinate system mismatch (Lat/Long to Native)
-    native_bbox = bbox
-    is_geographic = abs(bbox.min_x) <= 180 and abs(bbox.max_x) <= 180 and \
-                    abs(bbox.min_y) <= 90 and abs(bbox.max_y) <= 90
+    if len(request.coordinates) < 3:
+        raise HTTPException(status_code=400, detail="Polygon requires at least 3 points")
+
+    # Ensure polygon is closed
+    coords = list(request.coordinates)
+    if coords[0] != coords[-1]:
+        coords.append(coords[0])
+
+    # Reproject coordinates from WGS84 to native SRS if needed
+    native_coords = coords
+    lons = [c[0] for c in coords]
+    lats = [c[1] for c in coords]
+    is_geographic = all(abs(x) <= 180 for x in lons) and all(abs(y) <= 90 for y in lats)
 
     if is_geographic and dataset.srs_wkt:
         try:
             from pyproj import Transformer
-            # Create transformer from 4326 to dataset SRS
             transformer = Transformer.from_crs("EPSG:4326", dataset.srs_wkt, always_xy=True)
-            
-            # Project min and max corners
-            min_x, min_y = transformer.transform(bbox.min_x, bbox.min_y)
-            max_x, max_y = transformer.transform(bbox.max_x, bbox.max_y)
-            
-            native_bbox = BoundingBox(
-                min_x=min(min_x, max_x),
-                min_y=min(min_y, max_y),
-                min_z=bbox.min_z,
-                max_x=max(min_x, max_x),
-                max_y=max(min_y, max_y),
-                max_z=bbox.max_z
-            )
-            logger.info(f"Reprojected geographic selection to native SRS: {native_bbox}")
+            native_coords = []
+            for lon, lat in coords:
+                x, y = transformer.transform(lon, lat)
+                native_coords.append([x, y])
+            logger.info(f"Reprojected {len(coords)} polygon vertices to native SRS")
         except Exception as e:
             logger.warning(f"Coordinate reprojection failed: {e}")
-            # Fallback to provided coordinates if reprojection fails
 
-    # Get nodes intersecting bbox (in native SRS)
-    nodes = await node_repo.get_nodes_in_bbox(dataset_id, native_bbox)
+    # Build WKT POLYGON from native coordinates
+    wkt_coords = ", ".join(f"{c[0]} {c[1]}" for c in native_coords)
+    wkt_polygon = f"POLYGON(({wkt_coords}))"
 
+    # Compute bounding box of native polygon for node intersection query
+    xs = [c[0] for c in native_coords]
+    ys = [c[1] for c in native_coords]
+    poly_bbox = BoundingBox(
+        min_x=min(xs), min_y=min(ys), min_z=request.min_z,
+        max_x=max(xs), max_y=max(ys), max_z=request.max_z
+    )
+
+    nodes = await node_repo.get_nodes_in_bbox(dataset_id, poly_bbox)
     if not nodes:
         raise HTTPException(status_code=404, detail="No nodes found in specified zone")
 
@@ -121,29 +138,24 @@ async def download_zone(
     if not pdal.pdal_version:
         raise HTTPException(status_code=503, detail="PDAL not available")
 
-    # Create temp directory for downloads and processing
     temp_dir = tempfile.mkdtemp(prefix="zone_")
     downloaded_files = []
     cropped_files = []
 
     try:
-        # Download all nodes from MinIO
         for node in nodes:
             local_path = os.path.join(temp_dir, f"node_{node['node_id']}.laz")
             download_file(minio_client, BUCKET_PROCESSED, node["minio_path"], local_path)
             downloaded_files.append(local_path)
 
-        # Crop each node to exact bbox
         for i, local_path in enumerate(downloaded_files):
             cropped_path = os.path.join(temp_dir, f"cropped_{i}.laz")
-            pdal.crop_to_bbox(local_path, cropped_path, native_bbox)
+            pdal.crop_to_polygon(local_path, cropped_path, wkt_polygon, request.min_z, request.max_z)
             cropped_files.append(cropped_path)
 
-        # Merge all cropped files
         merged_path = os.path.join(temp_dir, "merged.laz")
         pdal.merge_files(cropped_files, merged_path)
 
-        # Read file content
         with open(merged_path, "rb") as f:
             content = f.read()
 
@@ -157,6 +169,5 @@ async def download_zone(
         logger.error(f"Zone download failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Cleanup temp files
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)

@@ -308,6 +308,54 @@ class PDALProcessor:
             logger.error(f"PDAL crop failed: {e}")
             raise
 
+    def crop_to_polygon(
+        self,
+        input_file: str,
+        output_file: str,
+        wkt_polygon: str,
+        min_z: float = -1e10,
+        max_z: float = 1e10,
+    ) -> Dict[str, Any]:
+        """
+        Crop a point cloud to an arbitrary polygon using PDAL filters.crop.
+
+        Args:
+            input_file: Path to input LAZ/LAS file
+            output_file: Path for cropped output file
+            wkt_polygon: WKT POLYGON string defining the crop region
+            min_z: Minimum Z filter
+            max_z: Maximum Z filter
+        """
+        pipeline = {
+            "pipeline": [
+                input_file,
+                {
+                    "type": "filters.crop",
+                    "polygon": wkt_polygon
+                },
+                {
+                    "type": "filters.expression",
+                    "expression": f"Z >= {min_z} && Z < {max_z}"
+                },
+                {
+                    "type": "writers.las",
+                    "filename": output_file,
+                    "compression": "true"
+                }
+            ]
+        }
+
+        try:
+            self._run_pipeline(pipeline)
+            info = self.get_info(output_file)
+            return {
+                "point_count": info["point_count"],
+                "output_file": output_file,
+            }
+        except PDALPipelineError as e:
+            logger.error(f"PDAL polygon crop failed: {e}")
+            raise
+
     def crop_to_octants(
         self,
         input_file: str,
