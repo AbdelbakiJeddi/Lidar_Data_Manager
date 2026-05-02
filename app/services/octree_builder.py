@@ -149,46 +149,32 @@ class OctreeBuilder:
             self.nodes.append(node)
             return node
 
-        # ---- Recursive step: sample + partition remainder ---- #
-        threshold = max(self.point_threshold, 1)
-        step = max(math.ceil(point_count / threshold), 2)
+        # ---- Recursive step: crop to 8 octants in ONE pipeline ---- #
+        # This is MUCH faster than sample_nth + remainder_nth + 8 crops
+        # because we read the file only ONCE and write to 8 outputs.
 
-        sampled_file = os.path.join(self.temp_dir, f"sampled_{node_id}.laz")
-        remainder_file = os.path.join(self.temp_dir, f"remainder_{node_id}.laz")
-
-        # 1. Create the node sample (every Nth point stays here)
-        sampled_count = self.processor.sample_nth(input_file, sampled_file, step)
-        logger.debug(f"Node {node_id}: sampled {sampled_count} points (step={step})")
-
-        # 2. Create the remainder (all other points → children)
-        remainder_count = self.processor.remainder_nth(input_file, remainder_file, step)
-        logger.debug(f"Node {node_id}: remainder {remainder_count} points")
-
-        # 3. Upload the sampled file as this node's data
-        minio_path = self._upload_node(sampled_file, depth, node_id)
-        self._safe_remove(sampled_file)
-
-        # 4. Crop the remainder into 8 octants and recurse
-        children_ids: List[str] = []
         octants = bbox.split_into_octants()
+        children_ids: List[str] = []
 
+        # Crop all 8 octants in a single PDAL call
+        octant_files = self.processor.crop_to_octants(
+            input_file,
+            self.temp_dir,
+            octants,
+            prefix=f"octant_{node_id}",
+        )
+
+        # Process each octant recursively
         for i, child_bbox in enumerate(octants):
             child_node_id = self._generate_node_id(node_id, i)
-            child_file = os.path.join(self.temp_dir, f"octant_{child_node_id}.laz")
+            child_file = octant_files.get(i)
 
-            try:
-                # Expand bbox slightly to avoid float-boundary exclusions
-                # (SPSLiDAR convention).
-                self.processor.crop_to_bbox(
-                    remainder_file,
-                    child_file,
-                    child_bbox.with_margin(BBOX_MARGIN),
-                )
-
-                if os.path.exists(child_file) and os.path.getsize(child_file) > 0:
+            if child_file and os.path.exists(child_file) and os.path.getsize(child_file) > 0:
+                try:
                     child_point_count = self.processor.get_point_count(child_file)
 
                     if child_point_count > 0:
+                        # RECURSE to check if this child should split further
                         child_node = self._process_node(
                             child_file,
                             child_bbox,
@@ -199,25 +185,24 @@ class OctreeBuilder:
                         )
                         children_ids.append(child_node_id)
 
+                except PDALPipelineError as e:
+                    logger.warning(f"Failed to process octant {child_node_id}: {e}")
+
                 self._safe_remove(child_file)
 
-            except PDALPipelineError as e:
-                logger.warning(f"Failed to process octant {child_node_id}: {e}")
-                self._safe_remove(child_file)
-
-        # Clean up remainder
-        self._safe_remove(remainder_file)
+        # Clean up input file
+        self._safe_remove(input_file)
 
         # Build the current (non-leaf) node
         node = OctreeNode(
             node_id=node_id,
             depth=depth,
             bbox=bbox,
-            point_count=sampled_count,
+            point_count=point_count,
             is_leaf=False,
             children=children_ids,
             parent=parent_id,
-            minio_path=minio_path,
+            minio_path="",
         )
         self.nodes.append(node)
         return node

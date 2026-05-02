@@ -24,6 +24,8 @@ class Dataset(BaseModel):
     point_count: Optional[int] = None
     node_count: Optional[int] = None
     bbox: Optional[BoundingBox] = None
+    geographic_bbox: Optional[BoundingBox] = None
+    srs_wkt: Optional[str] = None
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

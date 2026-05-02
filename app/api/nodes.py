@@ -71,9 +71,9 @@ async def download_zone(
 ) -> Response:
     """
     Download merged point cloud for a specific zone.
-
-    User provides bounding box → server retrieves intersecting nodes,
-    crops each to exact bbox, merges, and returns file.
+    
+    If the provided bbox is in Lat/Long (geographic), it is reprojected
+    to the dataset's native SRS before processing.
     """
     node_repo = OctreeNodeRepository(db)
     dataset_repo = DatasetRepository(db)
@@ -83,8 +83,36 @@ async def download_zone(
     if not dataset:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
 
-    # Get nodes intersecting bbox
-    nodes = await node_repo.get_nodes_in_bbox(dataset_id, bbox)
+    # Handle coordinate system mismatch (Lat/Long to Native)
+    native_bbox = bbox
+    is_geographic = abs(bbox.min_x) <= 180 and abs(bbox.max_x) <= 180 and \
+                    abs(bbox.min_y) <= 90 and abs(bbox.max_y) <= 90
+
+    if is_geographic and dataset.srs_wkt:
+        try:
+            from pyproj import Transformer
+            # Create transformer from 4326 to dataset SRS
+            transformer = Transformer.from_crs("EPSG:4326", dataset.srs_wkt, always_xy=True)
+            
+            # Project min and max corners
+            min_x, min_y = transformer.transform(bbox.min_x, bbox.min_y)
+            max_x, max_y = transformer.transform(bbox.max_x, bbox.max_y)
+            
+            native_bbox = BoundingBox(
+                min_x=min(min_x, max_x),
+                min_y=min(min_y, max_y),
+                min_z=bbox.min_z,
+                max_x=max(min_x, max_x),
+                max_y=max(min_y, max_y),
+                max_z=bbox.max_z
+            )
+            logger.info(f"Reprojected geographic selection to native SRS: {native_bbox}")
+        except Exception as e:
+            logger.warning(f"Coordinate reprojection failed: {e}")
+            # Fallback to provided coordinates if reprojection fails
+
+    # Get nodes intersecting bbox (in native SRS)
+    nodes = await node_repo.get_nodes_in_bbox(dataset_id, native_bbox)
 
     if not nodes:
         raise HTTPException(status_code=404, detail="No nodes found in specified zone")
@@ -108,7 +136,7 @@ async def download_zone(
         # Crop each node to exact bbox
         for i, local_path in enumerate(downloaded_files):
             cropped_path = os.path.join(temp_dir, f"cropped_{i}.laz")
-            pdal.crop_to_bbox(local_path, cropped_path, bbox)
+            pdal.crop_to_bbox(local_path, cropped_path, native_bbox)
             cropped_files.append(cropped_path)
 
         # Merge all cropped files

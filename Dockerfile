@@ -1,17 +1,12 @@
-FROM condaforge/miniforge3:latest
+FROM pdal/pdal:latest
 
-# Install PDAL using mamba (much faster C++ solver, guarantees conda-forge compatibility).
-RUN mamba install -y pdal \
-    && mamba clean -afy
-
-ENV PDAL_BIN="pdal"
-
-WORKDIR /app
-
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Fail image build early if PDAL CLI isn't available.
+WORKDIR /app
+
+# Verify PDAL works
 RUN pdal --version
 
 COPY app ./app

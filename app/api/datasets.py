@@ -129,12 +129,20 @@ async def _process_octree_background(
         nodes = builder.build_octree(object_name, input_in_minio=True, source_bucket=BUCKET_RAW)
         stats = builder.get_stats()
 
+        # Get extra info from processor (like geographic bbox and srs)
+        with tempfile.NamedTemporaryFile(suffix=".laz") as tmp:
+            minio_download_file(minio_client, BUCKET_RAW, object_name, tmp.name)
+            info = builder.pdal.get_info(tmp.name)
+
         await node_repo.create_many(dataset_id, nodes)
         await dataset_repo.update_status(
             dataset_id,
             "completed",
             point_count=stats["total_points"],
-            node_count=stats["total_nodes"]
+            node_count=stats["total_nodes"],
+            bbox=info["bbox"],
+            geographic_bbox=info["geographic_bbox"],
+            srs_wkt=info["srs_wkt"]
         )
 
         builder.cleanup()
@@ -216,6 +224,7 @@ async def list_dataset_nodes(
 @router.get("/datasets/{dataset_id}/info")
 async def get_lidar_info(
     dataset_id: str,
+    override_srs: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
@@ -233,7 +242,18 @@ async def get_lidar_info(
         minio_download_file(minio_client, BUCKET_RAW, dataset.object_name, tmp_path)
 
         processor = PDALProcessor()
-        info = processor.get_info(tmp_path)
+        info = processor.get_info(tmp_path, override_srs=override_srs)
+        
+        # Update dataset record with newly extracted info if missing
+        await dataset_repo.update_status(
+            dataset_id,
+            dataset.status,
+            point_count=info["point_count"],
+            bbox=info["bbox"],
+            geographic_bbox=info["geographic_bbox"],
+            srs_wkt=info["srs_wkt"]
+        )
+        
         info["backend"] = "pdal"
         return info
 

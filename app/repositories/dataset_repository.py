@@ -52,6 +52,9 @@ class DatasetRepository:
         status: str,
         point_count: Optional[int] = None,
         node_count: Optional[int] = None,
+        bbox: Optional[Dict[str, Any]] = None,
+        geographic_bbox: Optional[Dict[str, Any]] = None,
+        srs_wkt: Optional[str] = None,
         error: Optional[str] = None
     ) -> None:
         """Update dataset status and optional fields."""
@@ -64,6 +67,12 @@ class DatasetRepository:
             update["point_count"] = point_count
         if node_count is not None:
             update["node_count"] = node_count
+        if bbox is not None:
+            update["bbox"] = bbox
+        if geographic_bbox is not None:
+            update["geographic_bbox"] = geographic_bbox
+        if srs_wkt is not None:
+            update["srs_wkt"] = srs_wkt
         if error is not None:
             update["error"] = error
         await self.collection.update_one({"id": dataset_id}, {"$set": update})

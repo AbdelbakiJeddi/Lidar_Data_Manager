@@ -21,7 +21,7 @@ export const uploadDataset = (datasetName, file, onUploadProgress) => {
   });
 };
 
-export const processDataset = (datasetId, maxDepth = 8, pointThreshold = 10000) => {
+export const processDataset = (datasetId, maxDepth = 8, pointThreshold = 5000000) => {
   return api.post(`/lidar/process/${datasetId}`, {
     max_depth: maxDepth,
     point_threshold: pointThreshold,

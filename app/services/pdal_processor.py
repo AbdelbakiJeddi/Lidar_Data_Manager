@@ -16,6 +16,8 @@ from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+BBOX_MARGIN = 0.01
+
 
 class PDALProcessor:
     """
@@ -95,19 +97,24 @@ class PDALProcessor:
         finally:
             os.unlink(pipeline_file)
 
-    def get_info(self, input_file: str) -> Dict[str, Any]:
+    def get_info(self, input_file: str, override_srs: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract metadata from a LAZ/LAS file using PDAL.
 
         Args:
             input_file: Path to input LAZ/LAS file
+            override_srs: Optional SRS to force (e.g. 'EPSG:32631')
 
         Returns:
-            Dictionary with point_count, bbox, srs, and metadata
+            Dictionary with point_count, bbox, geographic_bbox, srs_wkt, and metadata
         """
         try:
+            cmd = [self.pdal_bin, "info", "--summary", input_file]
+            if override_srs:
+                cmd.extend(["--readers.las.override_srs", override_srs])
+
             result = subprocess.run(
-                [self.pdal_bin, "info", "--summary", input_file],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -119,19 +126,89 @@ class PDALProcessor:
             metadata = info.get("metadata", {})
             summary = info.get("summary", {})
             bounds = summary.get("bounds", {})
+            srs_info = summary.get("srs", {})
+            
+            if not srs_info.get("wkt"):
+                srs_info = metadata.get("readers.las", {}).get("srs", {})
+            
+            srs_wkt = override_srs or srs_info.get("wkt") or srs_info.get("compoundwkt")
 
             count = self._extract_point_count(metadata, summary)
             bbox = self._extract_bbox(bounds)
+            
+            # Compute geographic bbox by reprojecting native bbox using pyproj
+            geographic_bbox = None
+            if bbox is not None and srs_wkt:
+                geographic_bbox = self._reproject_bbox_to_wgs84(bbox, srs_wkt)
 
             return {
                 "point_count": int(count),
                 "bbox": bbox,
-                "srs": summary.get("srs", {}),
+                "geographic_bbox": geographic_bbox,
+                "srs_wkt": srs_wkt,
+                "srs": srs_info,
                 "metadata": info,
             }
         except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError) as e:
             logger.error(f"PDAL get_info failed: {e}")
             raise PDALPipelineError(f"Failed to extract metadata: {e}") from e
+
+    def _reproject_bbox_to_wgs84(self, bbox: Dict[str, float], srs_wkt: str) -> Optional[Dict[str, float]]:
+        """Reproject a native bounding box to WGS84 (EPSG:4326) using pyproj."""
+        try:
+            from pyproj import Transformer, CRS
+            
+            source_crs = CRS.from_user_input(srs_wkt)
+            
+            # If it's already geographic, just return as-is
+            if source_crs.is_geographic:
+                logger.info("Dataset is already in geographic coordinates, no reprojection needed")
+                return bbox
+            
+            transformer = Transformer.from_crs(source_crs, "EPSG:4326", always_xy=True)
+            
+            # Transform all four corners for accuracy
+            corners_x = [bbox["min_x"], bbox["min_x"], bbox["max_x"], bbox["max_x"]]
+            corners_y = [bbox["min_y"], bbox["max_y"], bbox["min_y"], bbox["max_y"]]
+            
+            lons, lats = transformer.transform(corners_x, corners_y)
+            
+            geo_bbox = {
+                "min_x": min(lons),
+                "min_y": min(lats),
+                "max_x": max(lons),
+                "max_y": max(lats),
+                "min_z": bbox.get("min_z", -1000.0),
+                "max_z": bbox.get("max_z", 1000.0),
+            }
+            
+            logger.info(f"Reprojected native bbox to WGS84: {geo_bbox}")
+            return geo_bbox
+            
+        except Exception as e:
+            logger.warning(f"Failed to reproject bbox to WGS84: {e}")
+            return None
+
+    def _extract_geographic_bbox(self, boundary: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        """Extract geographic bbox from PDAL info boundary (GeoJSON)."""
+        if not boundary or boundary.get("type") != "Polygon":
+            return None
+        
+        coords = boundary.get("coordinates", [[]])[0]
+        if not coords:
+            return None
+        
+        lons = [c[0] for c in coords]
+        lats = [c[1] for c in coords]
+        
+        return {
+            "min_x": min(lons),
+            "min_y": min(lats),
+            "max_x": max(lons),
+            "max_y": max(lats),
+            "min_z": -1000.0, # Boundary is 2D
+            "max_z": 1000.0,
+        }
 
     def _extract_point_count(self, metadata: Dict[str, Any], summary: Dict[str, Any]) -> int:
         """Extract point count from multiple PDAL info output variants."""
@@ -227,10 +304,41 @@ class PDALProcessor:
                     "max_z": bbox.max_z,
                 }
             }
-
         except PDALPipelineError as e:
             logger.error(f"PDAL crop failed: {e}")
             raise
+
+    def crop_to_octants(
+        self,
+        input_file: str,
+        output_dir: str,
+        octants: List[BoundingBox],
+        prefix: str = "octant",
+    ) -> Dict[int, str]:
+        """Crop input to all 8 octants using individual crop calls.
+
+        This is still faster than sample_nth + remainder_nth because
+        we only read the file 8 times (not 24+ times).
+
+        Args:
+            input_file: Path to input LAZ/LAS file
+            output_dir: Directory for output files
+            octants: List of 8 BoundingBoxes (the octant regions)
+            prefix: Prefix for output filenames
+
+        Returns:
+            Dictionary mapping octant_index -> output_file path
+        """
+        output_files: Dict[int, str] = {}
+
+        for i, oct in enumerate(octants):
+            output_path = os.path.join(output_dir, f"{prefix}_{i}.laz")
+            output_files[i] = output_path
+
+            # Crop to this octant
+            self.crop_to_bbox(input_file, output_path, oct.with_margin(BBOX_MARGIN))
+
+        return output_files
 
     def merge_files(
         self,
