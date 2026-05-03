@@ -531,6 +531,94 @@ class PDALProcessor:
             logger.error(f"PDAL merge failed: {e}")
             raise
 
+    def split_to_grid(
+        self,
+        input_file: str,
+        output_dir: str,
+        tile_size: float,
+        origin_x: float = 0,
+        origin_y: float = 0,
+    ) -> List[str]:
+        """
+        Split a point cloud into a 2D grid of tiles using filters.splitter.
+
+        Args:
+            input_file: Path to input LAZ/LAS file
+            output_dir: Directory where tiles will be saved (must exist)
+            tile_size: Size of each square tile in meters (e.g., 500.0)
+            origin_x: X origin for the grid alignment
+            origin_y: Y origin for the grid alignment
+
+        Returns:
+            List of generated tile file paths.
+        """
+        # PDAL splitter naming convention uses 'tile_#' which results in tile_0, tile_1, etc.
+        output_pattern = os.path.join(output_dir, "tile_#.laz")
+        
+        pipeline = {
+            "pipeline": [
+                input_file,
+                {
+                    "type": "filters.splitter",
+                    "length": tile_size,
+                    "origin_x": origin_x,
+                    "origin_y": origin_y
+                },
+                {
+                    "type": "writers.las",
+                    "filename": output_pattern,
+                    "compression": "true",
+                    "forward": "all"
+                }
+            ]
+        }
+
+        try:
+            self._run_pipeline(pipeline)
+            # Find all files matching the pattern in the directory
+            generated_files = [
+                os.path.join(output_dir, f) 
+                for f in os.listdir(output_dir) 
+                if f.startswith("tile_") and f.endswith(".laz")
+            ]
+            return sorted(generated_files)
+        except PDALPipelineError as e:
+            logger.error(f"PDAL grid split failed: {e}")
+            raise
+
+    def convert_to_copc(
+        self,
+        input_file: str,
+        output_file: str,
+    ) -> str:
+        """
+        Convert a standard LAZ/LAS file to a Cloud Optimized Point Cloud (COPC) file.
+        
+        Args:
+            input_file: Path to input LAZ/LAS file
+            output_file: Path for output .copc.laz file
+            
+        Returns:
+            Path to the generated COPC file.
+        """
+        pipeline = {
+            "pipeline": [
+                input_file,
+                {
+                    "type": "writers.copc",
+                    "filename": output_file,
+                    "forward": "all"
+                }
+            ]
+        }
+
+        try:
+            self._run_pipeline(pipeline)
+            return output_file
+        except PDALPipelineError as e:
+            logger.error(f"PDAL COPC conversion failed: {e}")
+            raise
+
     def process_octant(
         self,
         input_file: str,

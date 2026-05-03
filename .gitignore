@@ -50,4 +50,5 @@ Thumbs.db
 .claude
 .opencode
 
-*.pdf
+
+docs/rapport/*
