@@ -3,8 +3,7 @@
 from pydantic import BaseModel
 
 
-class OctreeProcessRequest(BaseModel):
-    """Request model for octree processing."""
+class TileProcessRequest(BaseModel):
+    """Request model for 2D tiling and COPC conversion."""
 
-    max_depth: int = 8
-    point_threshold: int = 1_000_000
+    tile_size: float = 500.0

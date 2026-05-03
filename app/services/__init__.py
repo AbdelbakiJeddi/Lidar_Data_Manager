@@ -1,4 +1,6 @@
-from app.services.pdal_processor import PDALProcessor, PDALPipelineError
-from app.services.octree_builder import OctreeBuilder
+"""Service layer for LiDAR data processing."""
 
-__all__ = ["PDALProcessor", "PDALPipelineError", "OctreeBuilder"]
+from app.services.pdal_processor import PDALProcessor, PDALPipelineError
+from app.services.tile_manager import TileManager
+
+__all__ = ["PDALProcessor", "PDALPipelineError", "TileManager"]

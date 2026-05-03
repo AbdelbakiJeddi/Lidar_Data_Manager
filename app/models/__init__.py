@@ -2,13 +2,12 @@
 
 from .bounding_box import BoundingBox
 from .dataset import Dataset
-from .octree import OctreeNode, OctreeNodeDocument
-from .requests import OctreeProcessRequest
+from .tile import Tile
+from .requests import TileProcessRequest
 
 __all__ = [
     "BoundingBox",
     "Dataset",
-    "OctreeNode",
-    "OctreeNodeDocument",
-    "OctreeProcessRequest",
+    "Tile",
+    "TileProcessRequest",
 ]

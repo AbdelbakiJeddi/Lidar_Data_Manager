@@ -12,11 +12,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
 
 from app.api.dependencies import get_db, get_minio
-from app.models import Dataset, OctreeProcessRequest
-from app.repositories import DatasetRepository, OctreeNodeRepository
+from app.models import Dataset, TileProcessRequest
+from app.repositories import DatasetRepository, TileRepository
 from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file
 from app.services.pdal_processor import PDALProcessor, PDALPipelineError
-from app.services.octree_builder import OctreeBuilder
+from app.services.tile_manager import TileManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lidar", tags=["datasets"])
@@ -75,12 +75,12 @@ async def upload_lidar(
 @router.post("/process/{dataset_id}")
 async def process_lidar(
     dataset_id: str,
-    request: OctreeProcessRequest,
+    request: TileProcessRequest,
     background_tasks: BackgroundTasks,
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
-    """Start octree processing for a dataset."""
+    """Start 2D tiling and COPC processing for a dataset."""
     dataset_repo = DatasetRepository(db)
     dataset = await dataset_repo.get(dataset_id)
 
@@ -90,79 +90,61 @@ async def process_lidar(
     if dataset.status == "processing":
         raise HTTPException(status_code=400, detail="Dataset is already being processed")
 
-    if dataset.status == "completed":
-        raise HTTPException(status_code=400, detail="Dataset already processed")
-
+    # Update status to processing
     await dataset_repo.update_status(dataset_id, "processing")
 
     background_tasks.add_task(
-        _process_octree_background,
-        dataset_id, dataset.object_name,
-        request.max_depth, request.point_threshold,
-        db, minio_client
+        _process_tiling_background,
+        dataset_id, 
+        request.tile_size,
+        db, 
+        minio_client
     )
 
     return {
         "dataset_id": dataset_id,
         "status": "processing_started",
-        "message": f"Octree building started for {dataset.object_name}"
+        "message": f"2D tiling and COPC conversion started for {dataset.object_name}"
     }
 
 
-async def _process_octree_background(
+async def _process_tiling_background(
     dataset_id: str,
-    object_name: str,
-    max_depth: int,
-    point_threshold: int,
+    tile_size: float,
     db: AsyncIOMotorDatabase,
     minio_client: Minio
 ):
-    """Background task for octree processing."""
-    dataset_repo = DatasetRepository(db)
-    node_repo = OctreeNodeRepository(db)
-
+    """Background task for flat 2D tiling and COPC conversion."""
     try:
-        # Extract early metadata
+        # Extract metadata first to ensure bbox is populated
+        dataset_repo = DatasetRepository(db)
+        dataset = await dataset_repo.get(dataset_id)
+        
         with tempfile.NamedTemporaryFile(suffix=".laz") as tmp:
-            minio_download_file(minio_client, BUCKET_RAW, object_name, tmp.name)
+            minio_download_file(minio_client, BUCKET_RAW, dataset.object_name, tmp.name)
             pdal_proc = PDALProcessor()
             info = pdal_proc.get_info(tmp.name)
             
             srs_wkt = info.get("srs_wkt")
             geographic_boundary = pdal_proc.get_boundary(tmp.name, srs_wkt)
             
-        # Update dataset with geographic bounds so it appears on map immediately
-        await dataset_repo.update_status(
-            dataset_id,
-            "processing",
-            bbox=info["bbox"],
-            geographic_bbox=info.get("geographic_bbox"),
-            geographic_boundary=geographic_boundary,
-            srs_wkt=srs_wkt
-        )
+            # Update dataset with geographic bounds so it appears on map immediately
+            await dataset_repo.update_status(
+                dataset_id,
+                "processing",
+                bbox=info["bbox"],
+                geographic_bbox=info.get("geographic_bbox"),
+                geographic_boundary=geographic_boundary,
+                srs_wkt=srs_wkt
+            )
 
-        builder = OctreeBuilder(
-            minio_client=minio_client,
-            dataset_id=dataset_id,
-            max_depth=max_depth,
-            point_threshold=point_threshold
-        )
-
-        nodes = builder.build_octree(object_name, input_in_minio=True, source_bucket=BUCKET_RAW)
-        stats = builder.get_stats()
-
-        await node_repo.create_many(dataset_id, nodes)
-        await dataset_repo.update_status(
-            dataset_id,
-            "completed",
-            point_count=stats["total_points"],
-            node_count=stats["total_nodes"]
-        )
-
-        builder.cleanup()
+        # Execute tiling
+        manager = TileManager(minio_client, db)
+        await manager.process_dataset(dataset_id, tile_size=tile_size)
 
     except Exception as e:
-        logger.error(f"Octree processing failed: {e}")
+        logger.error(f"Tiling process failed: {e}", exc_info=True)
+        dataset_repo = DatasetRepository(db)
         await dataset_repo.update_status(dataset_id, "failed", error=str(e))
 
 
@@ -209,29 +191,32 @@ async def get_dataset(
     return dataset.model_dump()
 
 
-@router.get("/datasets/{dataset_id}/nodes")
-async def list_dataset_nodes(
+@router.get("/datasets/{dataset_id}/tiles")
+async def list_dataset_tiles(
     dataset_id: str,
-    depth: Optional[int] = None,
+    min_x: Optional[float] = None,
+    min_y: Optional[float] = None,
+    max_x: Optional[float] = None,
+    max_y: Optional[float] = None,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> dict:
-    """Get octree nodes for a dataset."""
+    """Get 2D tiles for a dataset, optionally filtered by spatial bounds."""
     dataset_repo = DatasetRepository(db)
-    node_repo = OctreeNodeRepository(db)
+    tile_repo = TileRepository(db)
 
     dataset = await dataset_repo.get(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
 
-    if dataset.status != "completed":
-        raise HTTPException(status_code=400, detail=f"Dataset status: {dataset.status}")
-
-    nodes = await node_repo.get_by_dataset(dataset_id, depth)
+    if all(v is not None for v in [min_x, min_y, max_x, max_y]):
+        tiles = await tile_repo.get_tiles_in_bbox(dataset_id, min_x, min_y, max_x, max_y)
+    else:
+        tiles = await tile_repo.get_by_dataset(dataset_id)
 
     return {
         "dataset_id": dataset_id,
-        "total_nodes": len(nodes),
-        "nodes": nodes
+        "total_tiles": len(tiles),
+        "tiles": tiles
     }
 
 

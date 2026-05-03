@@ -11,7 +11,7 @@ from app.core.minio_client import (
     BUCKET_RAW,
     BUCKET_PROCESSED,
 )
-from app.core.metadata_models import BoundingBox, OctreeNode
+from app.core.metadata_models import BoundingBox, Tile
 
 __all__ = [
     "get_minio_client",
@@ -26,5 +26,5 @@ __all__ = [
     "BUCKET_RAW",
     "BUCKET_PROCESSED",
     "BoundingBox",
-    "OctreeNode",
+    "Tile",
 ]

@@ -38,8 +38,8 @@ async def ensure_indexes(db):
     await db.datasets.create_index("status")
     await db.datasets.create_index("created_at")
     await db.datasets.create_index("object_name", unique=True)
-    await db.octree_nodes.create_index([("dataset_id", 1), ("depth", 1)])
-    await db.octree_nodes.create_index([("dataset_id", 1), ("node_id", 1)], unique=True)
+    await db.tiles.create_index([("dataset_id", 1), ("grid_index", 1)])
+    await db.tiles.create_index([("dataset_id", 1), ("bbox.min_x", 1), ("bbox.min_y", 1)])
 
 
 async def check_mongo_health() -> dict:

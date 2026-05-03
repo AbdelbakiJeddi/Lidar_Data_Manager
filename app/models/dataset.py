@@ -22,7 +22,6 @@ class Dataset(BaseModel):
     last_modified: Optional[datetime] = None
     status: str = "uploaded"  # uploaded, processing, completed, failed
     point_count: Optional[int] = None
-    node_count: Optional[int] = None
     bbox: Optional[BoundingBox] = None
     geographic_bbox: Optional[BoundingBox] = None
     geographic_boundary: Optional[Dict[str, Any]] = None

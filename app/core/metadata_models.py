@@ -1,8 +1,8 @@
 """Metadata models for LiDAR processing.
 
-Re-exports BoundingBox and OctreeNode from app.models for backward compatibility.
+Re-exports BoundingBox and Tile from app.models for backward compatibility.
 """
 
-from app.models import BoundingBox, OctreeNode
+from app.models import BoundingBox, Tile
 
-__all__ = ["BoundingBox", "OctreeNode"]
+__all__ = ["BoundingBox", "Tile"]

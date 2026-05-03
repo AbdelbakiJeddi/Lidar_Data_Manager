@@ -1,0 +1,953 @@
+% ============================================================================
+% LATEX PROJECT REPORT TEMPLATE
+% ============================================================================
+% Based on academic standards (ENSI format)
+% Author: Copilot
+% Date: 2025-05-03
+% ============================================================================
+
+\documentclass[12pt,a4paper,onecolumn,oneside]{report}
+
+% ============================================================================
+% PACKAGES
+% ============================================================================
+
+% Language and encoding
+\usepackage[utf-8]{inputenc}
+\usepackage[french,english]{babel}
+\selectlanguage{english}
+
+% Margins and spacing
+\usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing % 1.5 line spacing
+
+% Graphics and colors
+\usepackage{graphicx}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{tikz}
+
+% Tables
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+% Code listings
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Math
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+
+% References and bibliography
+\usepackage[backend=biber,style=ieee,sorting=nty]{biblatex}
+\addbibresource{references.bib}
+
+% Links and URLs
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+    bookmarksnumbered=true
+}
+
+% Captions
+\usepackage{caption}
+\captionsetup[figure]{labelfont=bold, textfont=normalfont, skip=10pt}
+\captionsetup[table]{labelfont=bold, textfont=normalfont, skip=10pt}
+
+% TOC customization
+\usepackage{tocloft}
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+
+% Footnotes
+\usepackage{footmisc}
+
+% Page headers/footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\thepage}
+\fancyhead[L]{\leftmark}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Acronyms
+\usepackage{acro}
+
+% ============================================================================
+% CUSTOM COMMANDS & SETTINGS
+% ============================================================================
+
+% Code listing style
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    captionpos=b,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    showstringspaces=false,
+    tabsize=2,
+    backgroundcolor=\color{lightgray!10}
+}
+
+% Custom colors
+\definecolor{lightgray}{rgb}{0.95,0.95,0.95}
+\definecolor{darkblue}{rgb}{0.0,0.0,0.5}
+
+% Section formatting
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries}
+  {Chapter \thechapter}
+  {20pt}
+  {\Large}
+
+% Figure reference command
+\newcommand{\figref}[1]{Figure \ref{fig:#1}}
+\newcommand{\tabref}[1]{Table \ref{tab:#1}}
+\newcommand{\secref}[1]{Section \ref{sec:#1}}
+
+% ============================================================================
+% DOCUMENT METADATA
+% ============================================================================
+
+\title{%
+    \textbf{PROJECT REPORT}\\
+    \textbf{Design and Development Project}\\
+    \vspace{0.5cm}
+    \Large{Your Project Title Here}
+}
+
+\author{%
+    \textbf{Author 1 Name}\\
+    \textbf{Author 2 Name} (if applicable)\\
+    \vspace{0.3cm}
+    \normalsize{\textit{Supervisor: Dr./Prof. Name}}\\
+    \normalsize{\textit{School: National School of Computer Science (ENSI)}}
+}
+
+\date{Academic Year: 2024/2025}
+
+% ============================================================================
+% BEGIN DOCUMENT
+% ============================================================================
+
+\begin{document}
+
+% ============================================================================
+% FRONT MATTER
+% ============================================================================
+
+% Title page
+\maketitle
+
+% Custom title page (alternative, more formal)
+\thispagestyle{empty}
+\begin{center}
+    \vspace*{1cm}
+    \includegraphics[width=0.3\textwidth]{../images/ensi_logo.png}\\
+    \vspace{1cm}
+    
+    \large{\textbf{Université de la Manouba}}\\
+    \large{\textbf{École Nationale des Sciences de l'Informatique}}\\
+    \vspace{2cm}
+    
+    \textbf{\Large{RAPPORT DE PROJET}}\\
+    \textbf{\Large{Projet de Conception et de Développement}}\\
+    \vspace{1cm}
+    
+    {\LARGE \textbf{Your Project Title}}\\
+    \vspace{0.5cm}
+    
+    \normalsize{Subtitle or description}\\
+    \vspace{2cm}
+    
+    \textbf{Auteurs:}\\
+    Author Name 1\\
+    Author Name 2\\
+    \vspace{1cm}
+    
+    \textbf{Encadrant:}\\
+    Dr./Prof. Supervisor Name\\
+    \vspace{1cm}
+    
+    \textbf{Année Universitaire:} 2024/2025\\
+    \vspace{2cm}
+    
+    \textit{Appréciations et signature de l'encadrant}\\
+    \vspace{3cm}
+    
+    \line(1,0){150}
+\end{center}
+
+\clearpage
+
+% Appreciation page
+\thispagestyle{empty}
+\vspace*{5cm}
+\begin{center}
+    \textbf{\Large{APPRECIATION AND SUPERVISOR'S SIGNATURE}}
+\end{center}
+\vspace{3cm}
+
+\noindent Supervisor's signature: \hrulefill
+
+\noindent Grade: \hrulefill
+
+\noindent Date: \hrulefill
+
+\clearpage
+
+% Acknowledgements
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+We would like to express our deepest gratitude to Dr./Prof. \textbf{Supervisor Name} for his/her invaluable guidance, constant support, and insightful feedback throughout the entire duration of this project.
+
+We also thank the faculty and staff of the National School of Computer Science (ENSI) for providing us with a solid academic foundation and the necessary resources to carry out this project.
+
+Special thanks to [colleagues, collaborators, experts] for their assistance and valuable suggestions.
+
+Finally, we would like to dedicate this work to our families for their unconditional support and encouragement throughout this academic journey.
+
+\clearpage
+
+% Abstract
+\begin{abstract}
+    \noindent This project focuses on [brief description of the problem]. The main objective is to [state your main goal]. We propose a solution based on [your approach/methodology]. The system was implemented using [technologies/tools used]. 
+    
+    Key results show [quantitative findings and achievements]. The system demonstrates [performance metrics]. This work contributes to [significance/impact], offering a [value proposition].
+    
+    \textbf{Keywords:} keyword1, keyword2, keyword3, keyword4, keyword5
+\end{abstract}
+
+\clearpage
+
+% Table of Contents
+\tableofcontents
+
+\clearpage
+
+% List of Figures
+\listoffigures
+
+\clearpage
+
+% List of Tables
+\listoftables
+
+\clearpage
+
+% ============================================================================
+% MAIN CONTENT
+% ============================================================================
+
+\setcounter{page}{1}
+\pagenumbering{arabic}
+
+% ============================================================================
+% CHAPTER 1: INTRODUCTION
+% ============================================================================
+
+\chapter{Introduction}
+\label{chap:intro}
+
+\section{Problem Statement}
+\label{sec:intro:problem}
+
+Provide a clear description of the problem your project addresses. Start broad and then narrow down to your specific focus.
+
+\section{Motivation and Significance}
+\label{sec:intro:motivation}
+
+Explain why this problem matters and what impact solving it would have.
+
+\section{Project Objectives}
+\label{sec:intro:objectives}
+
+List the main objectives and goals of your project:
+\begin{enumerate}
+    \item Objective 1: Description
+    \item Objective 2: Description
+    \item Objective 3: Description
+\end{enumerate}
+
+\section{Project Scope}
+\label{sec:intro:scope}
+
+Define what is included and excluded from this project.
+
+\section{Report Organization}
+\label{sec:intro:organization}
+
+This report is organized as follows:
+\begin{itemize}
+    \item \textbf{Chapter 1:} Introduction and project overview
+    \item \textbf{Chapter 2:} Literature review and theoretical background
+    \item \textbf{Chapter 3:} Requirements analysis and specifications
+    \item \textbf{Chapter 4:} Design and architecture
+    \item \textbf{Chapter 5:} Implementation and results
+    \item \textbf{Chapter 6:} Conclusion and future work
+\end{itemize}
+
+% ============================================================================
+% CHAPTER 2: LITERATURE REVIEW & THEORETICAL BACKGROUND
+% ============================================================================
+
+\chapter{Literature Review and Theoretical Background}
+\label{chap:literature}
+
+\section{Theoretical Study}
+\label{sec:theory}
+
+\subsection{Fundamental Concepts}
+\label{sec:theory:concepts}
+
+Explain the foundational concepts necessary to understand your solution.
+
+\subsection{Related Technologies}
+\label{sec:theory:tech}
+
+Discuss relevant technologies, frameworks, or algorithms.
+
+\subsubsection{Algorithm 1: Name}
+Describe the algorithm, its approach, and mathematical foundations.
+
+\begin{equation}
+    f(x) = \sum_{i=0}^{n} a_i x^i
+    \label{eq:polynomial}
+\end{equation}
+
+See Equation \ref{eq:polynomial} for an example formula.
+
+\subsubsection{Algorithm 2: Name}
+Continue with additional algorithms as needed.
+
+\section{Study of Existing Solutions}
+\label{sec:existing}
+
+\subsection{Solution 1: System A}
+\label{sec:existing:sysA}
+
+\textbf{Purpose:} What does this system solve?
+
+\textbf{Approach:} How does it work?
+
+\textbf{Strengths:}
+\begin{itemize}
+    \item Strength 1
+    \item Strength 2
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+    \item Limitation 1
+    \item Limitation 2
+\end{itemize}
+
+\subsection{Solution 2: System B}
+\label{sec:existing:sysB}
+
+Continue with additional existing solutions.
+
+\section{Critique of Existing Solutions}
+\label{sec:critique}
+
+Identify gaps and limitations in existing approaches.
+
+\section{Proposed Solution}
+\label{sec:proposed}
+
+Briefly describe your proposed solution and how it addresses the identified gaps.
+
+\section{Work Methodology}
+\label{sec:methodology}
+
+Describe your development approach (Agile, Waterfall, Iterative, etc.) and major phases:
+
+\begin{table}[h]
+    \centering
+    \caption{Project Timeline}
+    \label{tab:timeline}
+    \begin{tabular}{|l|l|l|l|l|}
+        \hline
+        \textbf{Phase} & \textbf{Start} & \textbf{End} & \textbf{Duration} & \textbf{Status} \\
+        \hline
+        Requirements & Week 1 & Week 2 & 2 weeks & \checkmark Done \\
+        \hline
+        Design & Week 3 & Week 4 & 2 weeks & \checkmark Done \\
+        \hline
+        Implementation & Week 5 & Week 10 & 6 weeks & \checkmark Done \\
+        \hline
+        Testing & Week 11 & Week 12 & 2 weeks & \checkmark Done \\
+        \hline
+        Documentation & Week 13 & Week 14 & 2 weeks & \checkmark Done \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Conclusion}
+\label{sec:lit:conclusion}
+
+Summarize the key insights from the literature review and set up the transition to requirements analysis.
+
+% ============================================================================
+% CHAPTER 3: REQUIREMENTS & SPECIFICATIONS
+% ============================================================================
+
+\chapter{Requirements Analysis and Specifications}
+\label{chap:requirements}
+
+\section{Requirements Analysis}
+\label{sec:req:analysis}
+
+\subsection{Stakeholders}
+\label{sec:req:stakeholders}
+
+Identify all parties involved:
+\begin{itemize}
+    \item End users
+    \item Project supervisor
+    \item Development team
+    \item System administrators
+\end{itemize}
+
+\subsection{Functional Requirements}
+\label{sec:req:functional}
+
+List what the system must do:
+
+\begin{table}[h]
+    \centering
+    \caption{Functional Requirements}
+    \label{tab:fr}
+    \begin{tabular}{|l|p{8cm}|}
+        \hline
+        \textbf{ID} & \textbf{Requirement} \\
+        \hline
+        FR1 & The system shall allow users to upload a file in LAZ format \\
+        \hline
+        FR2 & The system shall automatically build an octree representation \\
+        \hline
+        FR3 & The system shall store metadata in MongoDB \\
+        \hline
+        FR4 & The system shall provide a REST API for querying nodes \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Non-Functional Requirements}
+\label{sec:req:nonfunctional}
+
+List system characteristics:
+
+\begin{table}[h]
+    \centering
+    \caption{Non-Functional Requirements}
+    \label{tab:nfr}
+    \begin{tabular}{|l|l|p{5cm}|}
+        \hline
+        \textbf{Category} & \textbf{ID} & \textbf{Requirement} \\
+        \hline
+        Performance & NFR1 & Response time < 100ms for API queries \\
+        \hline
+        Scalability & NFR2 & Support files up to 1 GB without overflow \\
+        \hline
+        Security & NFR3 & All data encrypted in transit and at rest \\
+        \hline
+        Reliability & NFR4 & System uptime > 99.5\% \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Specifications}
+\label{sec:specifications}
+
+Convert requirements into detailed specifications.
+
+\section{Conclusion}
+\label{sec:req:conclusion}
+
+Summary of requirements and transition to design phase.
+
+% ============================================================================
+% CHAPTER 4: DESIGN & ARCHITECTURE
+% ============================================================================
+
+\chapter{Design and Architecture}
+\label{chap:design}
+
+\section{System Architecture}
+\label{sec:design:architecture}
+
+\subsection{Overall Architecture}
+\label{sec:design:overall}
+
+Describe the high-level system architecture.
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[node distance=2cm]
+        \node (client) [draw, rectangle, minimum width=2cm] {Client};
+        \node (api) [draw, rectangle, right of=client, minimum width=2cm] {FastAPI};
+        \node (minio) [draw, rectangle, right of=api, minimum width=2cm] {MinIO};
+        \node (mongodb) [draw, rectangle, below of=api, minimum width=2cm] {MongoDB};
+        \node (pdal) [draw, rectangle, below of=minio, minimum width=2cm] {PDAL};
+        
+        \draw [->] (client) -- (api);
+        \draw [->] (api) -- (minio);
+        \draw [->] (api) -- (mongodb);
+        \draw [->] (api) -- (pdal);
+    \end{tikzpicture}
+    \caption{System Architecture Diagram}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Frontend Design}
+\label{sec:design:frontend}
+
+Describe the user interface and frontend components.
+
+\subsection{Backend Design}
+\label{sec:design:backend}
+
+Describe the backend services, API endpoints, and data models.
+
+\subsubsection{Database Schema}
+\label{sec:design:schema}
+
+\begin{lstlisting}[language=json, caption=Sample Database Schema, label=lst:schema]
+{
+  "_id": ObjectId,
+  "dataset_id": "string",
+  "node_id": "string",
+  "depth": 0,
+  "bbox": {
+    "min_x": 0.0,
+    "max_x": 100.0,
+    "min_y": 0.0,
+    "max_y": 100.0,
+    "min_z": 0.0,
+    "max_z": 50.0
+  },
+  "point_count": 10000,
+  "is_leaf": true,
+  "children": ["0", "1"],
+  "created_at": "2025-05-03T11:00:00Z"
+}
+\end{lstlisting}
+
+\section{Detailed Design}
+\label{sec:design:detailed}
+
+\subsection{Component Interactions}
+\label{sec:design:interactions}
+
+Describe how components interact.
+
+\subsection{Algorithm Design}
+\label{sec:design:algorithm}
+
+\begin{lstlisting}[language=Python, caption=Octree Building Algorithm, label=lst:algorithm]
+def build_octree(input_file, max_depth, point_threshold):
+    """Build octree from point cloud file."""
+    root_bbox = get_bounding_box(input_file)
+    
+    def process_node(file, bbox, depth):
+        point_count = get_point_count(file)
+        
+        if should_split(depth, point_count):
+            # Sample points
+            sampled = sample_nth(file, step)
+            remainder = get_remainder(file, step)
+            
+            # Create octants
+            for octant in bbox.split_into_octants():
+                octant_file = crop_to_bbox(remainder, octant)
+                process_node(octant_file, octant, depth + 1)
+        else:
+            # Leaf node
+            save_node(file, depth)
+    
+    process_node(input_file, root_bbox, 0)
+\end{lstlisting}
+
+\section{Conclusion}
+\label{sec:design:conclusion}
+
+Summary of design and transition to implementation.
+
+% ============================================================================
+% CHAPTER 5: IMPLEMENTATION & RESULTS
+% ============================================================================
+
+\chapter{Implementation and Results}
+\label{chap:implementation}
+
+\section{Development Environment}
+\label{sec:impl:environment}
+
+\subsection{Hardware Configuration}
+\label{sec:impl:hardware}
+
+\begin{table}[h]
+    \centering
+    \caption{Hardware Configuration}
+    \label{tab:hardware}
+    \begin{tabular}{|l|l|}
+        \hline
+        \textbf{Component} & \textbf{Specification} \\
+        \hline
+        CPU & Intel Core i7-10700K \\
+        \hline
+        RAM & 32 GB DDR4 \\
+        \hline
+        Storage & 1 TB SSD \\
+        \hline
+        GPU & NVIDIA RTX 3080 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Software Environment}
+\label{sec:impl:software}
+
+\begin{table}[h]
+    \centering
+    \caption{Software Stack}
+    \label{tab:software}
+    \begin{tabular}{|l|l|}
+        \hline
+        \textbf{Component} & \textbf{Technology} \\
+        \hline
+        Language & Python 3.12 \\
+        \hline
+        Framework & FastAPI \\
+        \hline
+        Database & MongoDB 6.0 \\
+        \hline
+        Storage & MinIO (S3-compatible) \\
+        \hline
+        Processing & PDAL 2.6 \\
+        \hline
+        Containerization & Docker \& Docker Compose \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Data Preparation}
+\label{sec:impl:data}
+
+Describe data collection, preprocessing, and statistics.
+
+\section{Core Functionality Implementation}
+\label{sec:impl:functionality}
+
+\subsection{Module 1: Octree Builder}
+\label{sec:impl:octree}
+
+Implementation of the main octree building module.
+
+\subsection{Module 2: PDAL Processor}
+\label{sec:impl:pdal}
+
+Implementation of PDAL integration for point cloud processing.
+
+\section{Results and Validation}
+\label{sec:impl:results}
+
+\subsection{Performance Metrics}
+\label{sec:impl:metrics}
+
+\begin{table}[h]
+    \centering
+    \caption{Performance Results}
+    \label{tab:results}
+    \begin{tabular}{|l|r|r|c|}
+        \hline
+        \textbf{Metric} & \textbf{Value} & \textbf{Target} & \textbf{Status} \\
+        \hline
+        File Processing Time & 0.5s & < 1.0s & \checkmark \\
+        \hline
+        Memory Usage Peak & 256 MB & < 500 MB & \checkmark \\
+        \hline
+        Node Creation Accuracy & 100\% & 99\% & \checkmark \\
+        \hline
+        Zero Duplication & Yes & Yes & \checkmark \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Comparative Analysis}
+\label{sec:impl:comparison}
+
+\begin{table}[h]
+    \centering
+    \caption{Comparison with Baselines}
+    \label{tab:comparison}
+    \begin{tabular}{|l|r|r|r|}
+        \hline
+        \textbf{Algorithm} & \textbf{Accuracy} & \textbf{Speed} & \textbf{Memory} \\
+        \hline
+        U-NET & 94\% & 2.1s & 512 MB \\
+        \hline
+        Fuzzy C-Means & 89\% & 1.5s & 256 MB \\
+        \hline
+        Our Approach & 96\% & 0.8s & 128 MB \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Testing and Validation}
+\label{sec:impl:testing}
+
+\subsection{Unit Testing}
+\label{sec:impl:unit}
+
+Test coverage: 87\%
+
+\subsection{Integration Testing}
+\label{sec:impl:integration}
+
+End-to-end workflow validation results.
+
+\section{User Interface}
+\label{sec:impl:ui}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../images/dashboard.png}
+    \caption{Main Dashboard Interface}
+    \label{fig:dashboard}
+\end{figure}
+
+\section{Challenges and Solutions}
+\label{sec:impl:challenges}
+
+\subsection{Challenge 1: Memory Overflow}
+
+\textbf{Problem:} Large files caused memory overflow.
+
+\textbf{Solution:} Implemented streaming pipeline with PDAL.
+
+\textbf{Result:} Reduced peak memory by 75\%.
+
+\section{Conclusion}
+\label{sec:impl:conclusion}
+
+Summary of implementation achievements and results.
+
+% ============================================================================
+% CHAPTER 6: CONCLUSION & FUTURE WORK
+% ============================================================================
+
+\chapter{Conclusion and Future Work}
+\label{chap:conclusion}
+
+\section{Main Achievements}
+\label{sec:conclusion:achievements}
+
+Summarize what was accomplished:
+\begin{itemize}
+    \item Achievement 1
+    \item Achievement 2
+    \item Achievement 3
+\end{itemize}
+
+\section{Challenges Overcome}
+\label{sec:conclusion:challenges}
+
+Describe obstacles faced and how they were resolved.
+
+\section{Limitations}
+\label{sec:conclusion:limitations}
+
+Identify current system limitations and constraints.
+
+\section{Future Work}
+\label{sec:conclusion:future}
+
+\subsection{Short-term (1-3 months)}
+
+\begin{enumerate}
+    \item Implement batch processing for multiple files
+    \item Add distributed processing support
+    \item Create comprehensive API documentation
+\end{enumerate}
+
+\subsection{Medium-term (3-6 months)}
+
+\begin{enumerate}
+    \item Multi-machine scaling via Apache Spark
+    \item Real-time streaming point cloud processing
+    \item Web-based visualization interface
+\end{enumerate}
+
+\subsection{Long-term (6+ months)}
+
+\begin{enumerate}
+    \item Support for additional point cloud formats
+    \item GPU-accelerated octree construction
+    \item ML-based automatic threshold optimization
+\end{enumerate}
+
+\section{Personal Reflection}
+\label{sec:conclusion:reflection}
+
+Reflect on what you learned from this project and how it has shaped your understanding or career interests.
+
+\section{Final Remarks}
+\label{sec:conclusion:remarks}
+
+Closing thoughts on the project's significance and impact.
+
+% ============================================================================
+% BACK MATTER
+% ============================================================================
+
+\clearpage
+
+% Bibliography
+\printbibliography[title={Bibliography and References}]
+
+% ============================================================================
+% APPENDICES
+% ============================================================================
+
+\appendix
+
+\chapter{API Documentation}
+\label{app:api}
+
+\section{Endpoints}
+\label{sec:app:endpoints}
+
+\subsection{Upload File}
+
+\begin{lstlisting}[language=bash]
+POST /lidar/upload
+Content-Type: multipart/form-data
+
+Parameters:
+  - file: The LAZ/LAS file to upload
+  - dataset_name: Name for the dataset
+
+Response:
+  {
+    "dataset_id": "abc123",
+    "filename": "terrain.laz",
+    "dataset_name": "test_dataset"
+  }
+\end{lstlisting}
+
+\subsection{Process Dataset}
+
+\begin{lstlisting}[language=bash]
+POST /lidar/process/{dataset_id}
+Content-Type: application/json
+
+Body:
+  {
+    "max_depth": 8,
+    "point_threshold": 10000
+  }
+\end{lstlisting}
+
+\chapter{Database Schema Details}
+\label{app:schema}
+
+Complete database schema documentation.
+
+\chapter{Installation Guide}
+\label{app:installation}
+
+\section{Prerequisites}
+
+\begin{enumerate}
+    \item Docker and Docker Compose
+    \item Python 3.12+
+    \item Git
+\end{enumerate}
+
+\section{Setup Instructions}
+
+\begin{lstlisting}[language=bash]
+# Clone repository
+git clone <repository-url>
+cd project
+
+# Start services
+docker compose up --build
+
+# Access services
+# API: http://localhost:8000
+# MinIO: http://localhost:9001
+# MongoDB: http://localhost:27017
+\end{lstlisting}
+
+\chapter{Code Listings}
+\label{app:code}
+
+\section{Core Module}
+
+\begin{lstlisting}[language=Python, caption=Main Octree Builder Module, label=lst:main]
+from app.services.octree_builder import OctreeBuilder
+from app.core.minio_client import get_minio_client
+
+def build_octree(dataset_id, max_depth=8, point_threshold=1000000):
+    """Main function to build octree."""
+    minio_client = get_minio_client()
+    
+    builder = OctreeBuilder(
+        minio_client=minio_client,
+        dataset_id=dataset_id,
+        max_depth=max_depth,
+        point_threshold=point_threshold
+    )
+    
+    nodes = builder.build_octree(
+        input_file=f"datasets/{dataset_id}/input.laz",
+        input_in_minio=True
+    )
+    
+    return builder.get_stats()
+\end{lstlisting}
+
+\chapter{Test Results}
+\label{app:tests}
+
+\section{Unit Test Coverage}
+
+\begin{table}[h]
+    \centering
+    \caption{Test Coverage Report}
+    \label{tab:testcoverage}
+    \begin{tabular}{|l|r|}
+        \hline
+        \textbf{Module} & \textbf{Coverage} \\
+        \hline
+        PDALProcessor & 92\% \\
+        \hline
+        OctreeBuilder & 85\% \\
+        \hline
+        MinIO Client & 90\% \\
+        \hline
+        Total & 87\% \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% ============================================================================
+% END OF DOCUMENT
+% ============================================================================
+
+\end{document}
