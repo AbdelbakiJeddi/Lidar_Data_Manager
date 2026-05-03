@@ -47,4 +47,23 @@ export const downloadZone = async (datasetId, coordinates, minZ, maxZ) => {
   window.URL.revokeObjectURL(url);
 };
 
+export const downloadMultiZone = async (coordinates, minZ = -1e10, maxZ = 1e10) => {
+  const response = await api.post(`/lidar/nodes/multi-zone`, {
+    coordinates,
+    min_z: minZ,
+    max_z: maxZ,
+  }, {
+    responseType: 'blob',
+  });
+  
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `multi_dataset_extraction.laz`);
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
 export default api;

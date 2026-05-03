@@ -39,8 +39,11 @@ async def upload_lidar(
     file_id = str(uuid.uuid4())[:8]
     object_name = f"uploads/{dataset_name}/{file_id}/{file.filename}"
 
+    from fastapi.concurrency import run_in_threadpool
+    
     try:
-        minio_client.put_object(
+        await run_in_threadpool(
+            minio_client.put_object,
             BUCKET_RAW,
             object_name,
             file.file,
@@ -51,7 +54,7 @@ async def upload_lidar(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    stat = minio_client.stat_object(BUCKET_RAW, object_name)
+    stat = await run_in_threadpool(minio_client.stat_object, BUCKET_RAW, object_name)
     dataset = await dataset_repo.create(
         dataset_name=dataset_name,
         filename=file.filename,
@@ -119,6 +122,25 @@ async def _process_octree_background(
     node_repo = OctreeNodeRepository(db)
 
     try:
+        # Extract early metadata
+        with tempfile.NamedTemporaryFile(suffix=".laz") as tmp:
+            minio_download_file(minio_client, BUCKET_RAW, object_name, tmp.name)
+            pdal_proc = PDALProcessor()
+            info = pdal_proc.get_info(tmp.name)
+            
+            srs_wkt = info.get("srs_wkt")
+            geographic_boundary = pdal_proc.get_boundary(tmp.name, srs_wkt)
+            
+        # Update dataset with geographic bounds so it appears on map immediately
+        await dataset_repo.update_status(
+            dataset_id,
+            "processing",
+            bbox=info["bbox"],
+            geographic_bbox=info.get("geographic_bbox"),
+            geographic_boundary=geographic_boundary,
+            srs_wkt=srs_wkt
+        )
+
         builder = OctreeBuilder(
             minio_client=minio_client,
             dataset_id=dataset_id,
@@ -129,20 +151,12 @@ async def _process_octree_background(
         nodes = builder.build_octree(object_name, input_in_minio=True, source_bucket=BUCKET_RAW)
         stats = builder.get_stats()
 
-        # Get extra info from processor (like geographic bbox and srs)
-        with tempfile.NamedTemporaryFile(suffix=".laz") as tmp:
-            minio_download_file(minio_client, BUCKET_RAW, object_name, tmp.name)
-            info = builder.pdal.get_info(tmp.name)
-
         await node_repo.create_many(dataset_id, nodes)
         await dataset_repo.update_status(
             dataset_id,
             "completed",
             point_count=stats["total_points"],
-            node_count=stats["total_nodes"],
-            bbox=info["bbox"],
-            geographic_bbox=info["geographic_bbox"],
-            srs_wkt=info["srs_wkt"]
+            node_count=stats["total_nodes"]
         )
 
         builder.cleanup()

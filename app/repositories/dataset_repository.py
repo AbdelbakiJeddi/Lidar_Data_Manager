@@ -54,6 +54,7 @@ class DatasetRepository:
         node_count: Optional[int] = None,
         bbox: Optional[Dict[str, Any]] = None,
         geographic_bbox: Optional[Dict[str, Any]] = None,
+        geographic_boundary: Optional[Dict[str, Any]] = None,
         srs_wkt: Optional[str] = None,
         error: Optional[str] = None
     ) -> None:
@@ -71,6 +72,8 @@ class DatasetRepository:
             update["bbox"] = bbox
         if geographic_bbox is not None:
             update["geographic_bbox"] = geographic_bbox
+        if geographic_boundary is not None:
+            update["geographic_boundary"] = geographic_boundary
         if srs_wkt is not None:
             update["srs_wkt"] = srs_wkt
         if error is not None:

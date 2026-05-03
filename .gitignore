@@ -9,6 +9,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
 *.egg-info/
 dist/
 build/
@@ -40,3 +41,11 @@ Thumbs.db
 
 # Environment
 .env
+
+#LAZ/LAS files
+*.laz
+*.las
+
+#Agent
+.claude
+.opencode

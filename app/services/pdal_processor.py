@@ -210,6 +210,70 @@ class PDALProcessor:
             "max_z": 1000.0,
         }
 
+    def _reproject_boundary_to_wgs84(self, boundary: Dict[str, Any], srs_wkt: str) -> Optional[Dict[str, Any]]:
+        """Reproject a GeoJSON Polygon or MultiPolygon boundary to WGS84."""
+        geom_type = boundary.get("type")
+        if geom_type not in ["Polygon", "MultiPolygon"]:
+            return None
+            
+        try:
+            from pyproj import Transformer, CRS
+            source_crs = CRS.from_user_input(srs_wkt)
+            
+            if source_crs.is_geographic:
+                return boundary
+                
+            transformer = Transformer.from_crs(source_crs, "EPSG:4326", always_xy=True)
+            
+            def transform_ring(ring):
+                lons, lats = transformer.transform([c[0] for c in ring], [c[1] for c in ring])
+                return [[lon, lat] for lon, lat in zip(lons, lats)]
+                
+            coords = boundary.get("coordinates", [])
+            new_coords = []
+            
+            if geom_type == "Polygon":
+                for ring in coords:
+                    new_coords.append(transform_ring(ring))
+            elif geom_type == "MultiPolygon":
+                for poly in coords:
+                    new_poly = []
+                    for ring in poly:
+                        new_poly.append(transform_ring(ring))
+                    new_coords.append(new_poly)
+            
+            return {
+                "type": geom_type,
+                "coordinates": new_coords
+            }
+        except Exception as e:
+            logger.warning(f"Failed to reproject boundary: {e}")
+            return None
+
+    def get_boundary(self, input_file: str, srs_wkt: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Compute the true hexagonal boundary of the point cloud and reproject to WGS84."""
+        try:
+            cmd = [self.pdal_bin, "info", "--boundary", input_file]
+            if srs_wkt:
+                cmd.extend(["--readers.las.override_srs", srs_wkt])
+                
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                logger.warning(f"pdal info --boundary failed: {result.stderr.strip()}")
+                return None
+                
+            info = json.loads(result.stdout)
+            boundary_obj = info.get("boundary", {})
+            boundary_json = boundary_obj.get("boundary_json")
+            
+            if boundary_json and srs_wkt:
+                return self._reproject_boundary_to_wgs84(boundary_json, srs_wkt)
+                
+            return boundary_json
+        except Exception as e:
+            logger.warning(f"Failed to extract exact boundary: {e}")
+            return None
+
     def _extract_point_count(self, metadata: Dict[str, Any], summary: Dict[str, Any]) -> int:
         """Extract point count from multiple PDAL info output variants."""
         candidates = [
@@ -281,7 +345,8 @@ class PDALProcessor:
                 {
                     "type": "writers.las",
                     "filename": output_file,
-                    "compression": "true"
+                    "compression": "true",
+                    "forward": "all"
                 }
             ]
         }
@@ -315,6 +380,7 @@ class PDALProcessor:
         wkt_polygon: str,
         min_z: float = -1e10,
         max_z: float = 1e10,
+        target_srs: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Crop a point cloud to an arbitrary polygon using PDAL filters.crop.
@@ -325,25 +391,34 @@ class PDALProcessor:
             wkt_polygon: WKT POLYGON string defining the crop region
             min_z: Minimum Z filter
             max_z: Maximum Z filter
+            target_srs: Optional SRS to reproject points to (e.g. 'EPSG:4326')
         """
-        pipeline = {
-            "pipeline": [
-                input_file,
-                {
-                    "type": "filters.crop",
-                    "polygon": wkt_polygon
-                },
-                {
-                    "type": "filters.expression",
-                    "expression": f"Z >= {min_z} && Z < {max_z}"
-                },
-                {
-                    "type": "writers.las",
-                    "filename": output_file,
-                    "compression": "true"
-                }
-            ]
-        }
+        stages = [
+            input_file,
+            {
+                "type": "filters.crop",
+                "polygon": wkt_polygon
+            },
+            {
+                "type": "filters.expression",
+                "expression": f"Z >= {min_z} && Z < {max_z}"
+            }
+        ]
+
+        if target_srs:
+            stages.append({
+                "type": "filters.reprojection",
+                "out_srs": target_srs
+            })
+
+        stages.append({
+            "type": "writers.las",
+            "filename": output_file,
+            "compression": "true",
+            "forward": "all"
+        })
+
+        pipeline = {"pipeline": stages}
 
         try:
             self._run_pipeline(pipeline)
@@ -363,10 +438,9 @@ class PDALProcessor:
         octants: List[BoundingBox],
         prefix: str = "octant",
     ) -> Dict[int, str]:
-        """Crop input to all 8 octants using individual crop calls.
+        """Crop input to all 8 octants using a single branched PDAL pipeline.
 
-        This is still faster than sample_nth + remainder_nth because
-        we only read the file 8 times (not 24+ times).
+        This reads the file EXACTLY ONCE and splits it into 8 outputs simultaneously.
 
         Args:
             input_file: Path to input LAZ/LAS file
@@ -378,15 +452,44 @@ class PDALProcessor:
             Dictionary mapping octant_index -> output_file path
         """
         output_files: Dict[int, str] = {}
+        
+        stages = [
+            {
+                "filename": input_file,
+                "tag": "reader"
+            }
+        ]
 
         for i, oct in enumerate(octants):
             output_path = os.path.join(output_dir, f"{prefix}_{i}.laz")
             output_files[i] = output_path
+            
+            bbox = oct.with_margin(BBOX_MARGIN)
+            crop_tag = f"crop_{i}"
+            
+            stages.append({
+                "type": "filters.crop",
+                "bounds": f"([{bbox.min_x}, {bbox.max_x}], [{bbox.min_y}, {bbox.max_y}], [{bbox.min_z}, {bbox.max_z}])",
+                "inputs": ["reader"],
+                "tag": crop_tag
+            })
+            
+            stages.append({
+                "type": "writers.las",
+                "filename": output_path,
+                "compression": "true",
+                "forward": "all",
+                "inputs": [crop_tag]
+            })
 
-            # Crop to this octant
-            self.crop_to_bbox(input_file, output_path, oct.with_margin(BBOX_MARGIN))
+        pipeline = {"pipeline": stages}
 
-        return output_files
+        try:
+            self._run_pipeline(pipeline)
+            return output_files
+        except PDALPipelineError as e:
+            logger.error(f"PDAL crop_to_octants failed: {e}")
+            raise
 
     def merge_files(
         self,
@@ -415,7 +518,8 @@ class PDALProcessor:
                 {
                     "type": "writers.las",
                     "filename": output_file,
-                    "compression": "true"
+                    "compression": "true",
+                    "forward": "all"
                 }
             ]
         }
