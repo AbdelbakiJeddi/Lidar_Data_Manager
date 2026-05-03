@@ -28,9 +28,13 @@ export const processDataset = (datasetId, maxDepth = 8, pointThreshold = 5000000
   });
 };
 
-export const downloadZone = async (datasetId, coordinates, minZ, maxZ) => {
-  const response = await api.post(`/lidar/nodes/${datasetId}/zone`, {
-    coordinates,
+export const downloadZone = async (datasetId, minX, minY, maxX, maxY, minZ, maxZ) => {
+  const response = await api.post(`/lidar/datasets/${datasetId}/crop`, {
+    dataset_id: datasetId,
+    min_x: minX,
+    min_y: minY,
+    max_x: maxX,
+    max_y: maxY,
     min_z: minZ,
     max_z: maxZ,
   }, {
@@ -47,11 +51,15 @@ export const downloadZone = async (datasetId, coordinates, minZ, maxZ) => {
   window.URL.revokeObjectURL(url);
 };
 
-export const downloadMultiZone = async (coordinates, minZ = -1e10, maxZ = 1e10) => {
-  const response = await api.post(`/lidar/nodes/multi-zone`, {
-    coordinates,
+export const downloadMultiZone = async (minX, minY, maxX, maxY, minZ = -1e10, maxZ = 1e10, datasetIds = null) => {
+  const response = await api.post(`/lidar/datasets/crop-multi`, {
+    min_x: minX,
+    min_y: minY,
+    max_x: maxX,
+    max_y: maxY,
     min_z: minZ,
     max_z: maxZ,
+    dataset_ids: datasetIds,
   }, {
     responseType: 'blob',
   });

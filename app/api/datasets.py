@@ -4,17 +4,18 @@ import uuid
 import tempfile
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, BackgroundTasks, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, BackgroundTasks, Depends, Body
+from fastapi.responses import StreamingResponse, JSONResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
+from minio.error import S3Error
 
 from app.api.dependencies import get_db, get_minio
-from app.models import Dataset, TileProcessRequest
+from app.models import Dataset, TileProcessRequest, BoundingBox, ZoneCropRequest, MultiZoneCropRequest
 from app.repositories import DatasetRepository, TileRepository
-from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file
+from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file, upload_local_file
 from app.services.pdal_processor import PDALProcessor, PDALPipelineError
 from app.services.tile_manager import TileManager
 
@@ -261,3 +262,150 @@ async def get_lidar_info(
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+@router.post("/datasets/{dataset_id}/crop")
+async def crop_zone(
+    dataset_id: str,
+    request: ZoneCropRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    minio_client: Minio = Depends(get_minio)
+) -> StreamingResponse:
+    """Crop a single dataset to a rectangular bounding box and return LAZ file."""
+    dataset_repo = DatasetRepository(db)
+    tile_repo = TileRepository(db)
+    
+    dataset = await dataset_repo.get(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+    
+    # Get tiles that intersect with the crop bbox
+    tiles = await tile_repo.get_tiles_in_bbox(
+        dataset_id, 
+        request.min_x, request.min_y, 
+        request.max_x, request.max_y
+    )
+    
+    if not tiles:
+        raise HTTPException(status_code=404, detail="No tiles found in the specified area")
+    
+    # Download all relevant tiles and merge them
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tile_paths = []
+        for tile in tiles:
+            tile_path = os.path.join(tmpdir, f"{tile['tile_key']}.laz")
+            object_name = tile['object_name']
+            minio_download_file(minio_client, BUCKET_PROCESSED, object_name, tile_path)
+            tile_paths.append(tile_path)
+        
+        # Merge all tiles into one file
+        merged_path = os.path.join(tmpdir, "merged.laz")
+        processor = PDALProcessor()
+        processor.merge_files(tile_paths, merged_path)
+        
+        # Crop the merged file to the exact bbox
+        output_path = os.path.join(tmpdir, "cropped.laz")
+        bbox = BoundingBox(
+            min_x=request.min_x,
+            min_y=request.min_y,
+            min_z=request.min_z,
+            max_x=request.max_x,
+            max_y=request.max_y,
+            max_z=request.max_z
+        )
+        result = processor.crop_to_bbox(merged_path, output_path, bbox)
+        
+        # Stream the result back
+        def iterfile():
+            with open(output_path, "rb") as f:
+                yield from f
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename=zone_{dataset_id}.laz"}
+        )
+
+
+@router.post("/datasets/crop-multi")
+async def crop_multi_zone(
+    request: MultiZoneCropRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    minio_client: Minio = Depends(get_minio)
+) -> StreamingResponse:
+    """Crop multiple datasets to a rectangular bounding box and return merged LAZ file."""
+    dataset_repo = DatasetRepository(db)
+    tile_repo = TileRepository(db)
+    
+    # Get all datasets or filter by provided IDs
+    if request.dataset_ids:
+        datasets = []
+        for ds_id in request.dataset_ids:
+            ds = await dataset_repo.get(ds_id)
+            if ds:
+                datasets.append(ds)
+    else:
+        datasets = await dataset_repo.list_all()
+    
+    if not datasets:
+        raise HTTPException(status_code=404, detail="No datasets found")
+    
+    # Collect all tiles from all datasets that intersect with the crop bbox
+    all_tile_paths = []
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for dataset in datasets:
+            tiles = await tile_repo.get_tiles_in_bbox(
+                dataset.id, 
+                request.min_x, request.min_y, 
+                request.max_x, request.max_y
+            )
+            
+            if not tiles:
+                continue
+            
+            # Download and merge tiles for this dataset
+            tile_paths = []
+            for tile in tiles:
+                tile_path = os.path.join(tmpdir, f"{dataset.id}_{tile['tile_key']}.laz")
+                object_name = tile['object_name']
+                minio_download_file(minio_client, BUCKET_PROCESSED, object_name, tile_path)
+                tile_paths.append(tile_path)
+            
+            if tile_paths:
+                # Merge tiles for this dataset
+                dataset_merged_path = os.path.join(tmpdir, f"merged_{dataset.id}.laz")
+                processor = PDALProcessor()
+                processor.merge_files(tile_paths, dataset_merged_path)
+                
+                # Crop to bbox
+                cropped_path = os.path.join(tmpdir, f"cropped_{dataset.id}.laz")
+                bbox = BoundingBox(
+                    min_x=request.min_x,
+                    min_y=request.min_y,
+                    min_z=request.min_z,
+                    max_x=request.max_x,
+                    max_y=request.max_y,
+                    max_z=request.max_z
+                )
+                processor.crop_to_bbox(dataset_merged_path, cropped_path, bbox)
+                all_tile_paths.append(cropped_path)
+        
+        if not all_tile_paths:
+            raise HTTPException(status_code=404, detail="No data found in the specified area")
+        
+        # Merge all cropped datasets into one final file
+        final_output = os.path.join(tmpdir, "final_merged.laz")
+        processor = PDALProcessor()
+        processor.merge_files(all_tile_paths, final_output)
+        
+        # Stream the result back
+        def iterfile():
+            with open(final_output, "rb") as f:
+                yield from f
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": "attachment; filename=multi_zone_extraction.laz"}
+        )

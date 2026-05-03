@@ -121,9 +121,16 @@ function App() {
     setIsDownloading(true);
     setError('');
     try {
-      const coordinates = points.map(p => [p.lng, p.lat]);
-      // Multi-dataset extraction is now the default
-      await downloadMultiZone(coordinates);
+      // Convert polygon points to bounding box
+      const lngs = points.map(p => p.lng);
+      const lats = points.map(p => p.lat);
+      const minX = Math.min(...lngs);
+      const maxX = Math.max(...lngs);
+      const minY = Math.min(...lats);
+      const maxY = Math.max(...lats);
+      
+      // Multi-dataset extraction with rectangular bbox
+      await downloadMultiZone(minX, minY, maxX, maxY);
     } catch (err) {
       console.error('Download failed', err);
       setError('Extraction failed. Ensure your selection overlaps with available datasets.');
@@ -423,11 +430,11 @@ function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {!isClosed ? (
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <MousePointer size={14} /> {points.length === 0 ? "Click map to draw" : `${points.length} points`}
+                  <MousePointer size={14} /> {points.length === 0 ? "Click to draw rectangle" : `${points.length} corners placed`}
                 </span>
               ) : (
                 <span style={{ fontSize: '0.85rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle2 size={14} /> Ready
+                  <CheckCircle2 size={14} /> Rectangle ready
                 </span>
               )}
 
@@ -445,7 +452,7 @@ function App() {
                 style={{ padding: '8px 20px', borderRadius: '20px', marginLeft: '8px' }}
                 title={activeDataset.status === 'processing' ? 'Wait for dataset processing to complete' : ''}
               >
-                {isDownloading ? 'Processing...' : activeDataset.status === 'processing' ? 'Dataset Processing...' : <><Download size={16} /> Download</>}
+                {isDownloading ? 'Processing...' : activeDataset.status === 'processing' ? 'Dataset Processing...' : <><Download size={16} /> Download Zone</>}
               </button>
             </div>
           </div>
