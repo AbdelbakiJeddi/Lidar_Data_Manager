@@ -51,7 +51,10 @@ class DatasetRepository:
         dataset_id: str,
         status: str,
         point_count: Optional[int] = None,
-        node_count: Optional[int] = None,
+        tiling_strategy: Optional[str] = None,
+        grid_origin: Optional[list[float]] = None,
+        tile_size_meters: Optional[float] = None,
+        total_tiles: Optional[int] = None,
         bbox: Optional[Dict[str, Any]] = None,
         geographic_bbox: Optional[Dict[str, Any]] = None,
         geographic_boundary: Optional[Dict[str, Any]] = None,
@@ -66,8 +69,14 @@ class DatasetRepository:
         }
         if point_count is not None:
             update["point_count"] = point_count
-        if node_count is not None:
-            update["node_count"] = node_count
+        if tiling_strategy is not None:
+            update["tiling_strategy"] = tiling_strategy
+        if grid_origin is not None:
+            update["grid_origin"] = grid_origin
+        if tile_size_meters is not None:
+            update["tile_size_meters"] = tile_size_meters
+        if total_tiles is not None:
+            update["total_tiles"] = total_tiles
         if bbox is not None:
             update["bbox"] = bbox
         if geographic_bbox is not None:

@@ -1,16 +1,16 @@
 # LiDAR Data Manager
 
-FastAPI service for managing LiDAR point cloud data with SPSLiDAR octree-based hierarchical storage and a premium React-based spatial interface.
+FastAPI service for managing LiDAR point cloud data with flat 2D tile storage and a premium React-based spatial interface.
 
 ## Overview
 
 This project provides a complete end-to-end solution for LiDAR data management:
 - **Upload**: Stream LAZ/LAS files to MinIO object storage.
-- **Process**: Build hierarchical octree structures using PDAL with the SPSLiDAR sampling algorithm.
+- **Process**: Split into a flat 2D grid of tiles using PDAL and convert to COPC.
 - **Spatial Intelligence**: Automated geographic boundary extraction and on-the-fly coordinate reprojection (UTM/Lambert/etc. to WGS84).
 - **Interactive Selection**: Premium web interface for selecting and extracting custom zones via free-form polygons.
 - **Store**: Raw data in MinIO, metadata in MongoDB.
-- **Serve**: Query and download octree nodes or custom spatial zones via REST API.
+- **Serve**: Query and download tiles or custom spatial zones via REST API.
 
 ## Quick Start
 
@@ -59,7 +59,7 @@ docker compose up --build
 ### Extract Custom Zone (Polygon)
 ```bash
 # Extract a custom shape by providing geographic vertices
-curl -X POST "http://localhost:8000/lidar/nodes/{dataset_id}/zone" \
+curl -X POST "http://localhost:8000/lidar/tiles/{dataset_id}/zone" \
   -H "Content-Type: application/json" \
   -d '{
     "coordinates": [[-86.15, 39.76], [-86.11, 39.76], [-86.13, 39.79]],
@@ -82,7 +82,7 @@ curl "http://localhost:8000/lidar/datasets/{id}/info"
 │   ├── api/              # API Endpoints (datasets, nodes, health)
 │   ├── core/             # Database & MinIO clients
 │   ├── models/           # Pydantic & MongoDB models
-│   ├── services/         # PDAL Processor, Octree Builder
+│   ├── services/         # PDAL Processor, Tile Manager
 │   └── main.py           # App entry point
 ├── frontend/             # React Frontend
 │   ├── src/
@@ -107,7 +107,7 @@ curl "http://localhost:8000/lidar/datasets/{id}/info"
 | Feature | Status |
 |---------|--------|
 | Multi-file Upload | ✅ Complete |
-| SPSLiDAR Octree | ✅ Complete |
+| Flat 2D Tiling | ✅ Complete |
 | Geographic Centering | ✅ Complete |
 | Rectangular Selection | ✅ Complete |
 | Free-form Polygon | ✅ Complete |

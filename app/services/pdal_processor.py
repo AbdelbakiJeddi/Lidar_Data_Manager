@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.core.metadata_models import BoundingBox
+from app.models.bounding_box import BoundingBox
 from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)

@@ -1,24 +1,12 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, useMap, Rectangle, Polygon, Polyline, CircleMarker, useMapEvents, Tooltip } from 'react-leaflet';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { MapContainer, TileLayer, useMap, Rectangle, Polygon, useMapEvents, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { getDatasets, downloadZone, uploadDataset, processDataset, downloadMultiZone } from './api';
-import { Box, Upload, RefreshCw, Layers, Database, X, Download, AlertTriangle, Maximize2, Crosshair, HelpCircle, Info, MousePointer, CheckCircle2, RotateCcw, Loader2 } from 'lucide-react';
+import { getDatasets, extractZone, uploadDataset, processDataset } from './api';
+import { Box, Upload, RefreshCw, Layers, Database, X, Download, AlertTriangle, Maximize2, Loader2 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
 // Colors for dataset contours
 const CONTOUR_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6'];
-
-const makeCornerIcon = (color, size = 14) => L.divIcon({
-  className: 'corner-marker',
-  html: `<div style="
-    width: ${size}px; height: ${size}px; border-radius: 50%;
-    background: ${color}; border: 2px solid #fff;
-    box-shadow: 0 0 8px ${color}88, 0 2px 4px rgba(0,0,0,0.4);
-    cursor: grab;
-  "></div>`,
-  iconSize: [size, size],
-  iconAnchor: [size/2, size/2],
-});
 
 // Component to handle map centering when a dataset is selected
 const MapEffects = ({ dataset }) => {
@@ -35,31 +23,117 @@ const MapEffects = ({ dataset }) => {
   return null;
 };
 
-// Click handler for placing polygon points
-const ClickHandler = ({ onMapClick, activeDataset }) => {
-  useMapEvents({ 
-    click: (e) => {
-      if (activeDataset) onMapClick(e);
+// Rectangle selector — drag to draw a rectangle on the map
+const RectangleSelector = ({ enabled, onSelectionComplete }) => {
+  const map = useMap();
+  const startRef = useRef(null);
+  const rectRef = useRef(null);
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      // Clean up any existing rectangle overlay
+      if (rectRef.current) {
+        map.removeLayer(rectRef.current);
+        rectRef.current = null;
+      }
+      return;
     }
-  });
+
+    const onMouseDown = (e) => {
+      // Only trigger on left mouse button, and not on controls
+      if (e.originalEvent.button !== 0) return;
+      // Prevent map drag while drawing
+      map.dragging.disable();
+      startRef.current = e.latlng;
+      draggingRef.current = false;
+
+      if (rectRef.current) {
+        map.removeLayer(rectRef.current);
+        rectRef.current = null;
+      }
+    };
+
+    const onMouseMove = (e) => {
+      if (!startRef.current) return;
+      draggingRef.current = true;
+
+      const bounds = L.latLngBounds(startRef.current, e.latlng);
+
+      if (rectRef.current) {
+        rectRef.current.setBounds(bounds);
+      } else {
+        rectRef.current = L.rectangle(bounds, {
+          color: '#3b82f6',
+          weight: 2,
+          fillOpacity: 0.15,
+          fillColor: '#3b82f6',
+          dashArray: '6, 4',
+        }).addTo(map);
+      }
+    };
+
+    const onMouseUp = (e) => {
+      map.dragging.enable();
+      if (!startRef.current) return;
+
+      if (draggingRef.current) {
+        const bounds = L.latLngBounds(startRef.current, e.latlng);
+
+        // Remove the temporary drawing rectangle
+        if (rectRef.current) {
+          map.removeLayer(rectRef.current);
+          rectRef.current = null;
+        }
+
+        // Only accept if the rectangle has meaningful size
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+        if (Math.abs(ne.lng - sw.lng) > 0.0001 && Math.abs(ne.lat - sw.lat) > 0.0001) {
+          onSelectionComplete({
+            minLon: sw.lng,
+            minLat: sw.lat,
+            maxLon: ne.lng,
+            maxLat: ne.lat,
+          });
+        }
+      }
+
+      startRef.current = null;
+      draggingRef.current = false;
+    };
+
+    map.on('mousedown', onMouseDown);
+    map.on('mousemove', onMouseMove);
+    map.on('mouseup', onMouseUp);
+
+    return () => {
+      map.off('mousedown', onMouseDown);
+      map.off('mousemove', onMouseMove);
+      map.off('mouseup', onMouseUp);
+      map.dragging.enable();
+      if (rectRef.current) {
+        map.removeLayer(rectRef.current);
+        rectRef.current = null;
+      }
+    };
+  }, [enabled, map, onSelectionComplete]);
+
   return null;
 };
 
-const CLOSE_THRESHOLD_PX = 15;
 
 function App() {
   const [datasets, setDatasets] = useState([]);
   const [activeDataset, setActiveDataset] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [mapRef, setMapRef] = useState(null);
 
   // Background Upload State
   const fileInputRef = useRef(null);
-  const [uploadingFiles, setUploadingFiles] = useState([]); // { id, name, progress }
+  const [uploadingFiles, setUploadingFiles] = useState([]);
 
-  // Polygon State
-  const [points, setPoints] = useState([]);
-  const [isClosed, setIsClosed] = useState(false);
+  // Rectangle Selection State
+  const [selectionBounds, setSelectionBounds] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,52 +155,41 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Reset drawing when explicitly closing the dataset bar
+  // Reset selection when dataset is deselected
   useEffect(() => {
     if (!activeDataset) {
-      setPoints([]);
-      setIsClosed(false);
+      setSelectionBounds(null);
       setError('');
     }
   }, [activeDataset]);
 
-  const handleMapClick = useCallback((e) => {
-    if (isClosed || !activeDataset) return;
-
-    if (points.length >= 3 && mapRef) {
-      const startPx = mapRef.latLngToContainerPoint(points[0]);
-      const clickPx = mapRef.latLngToContainerPoint(e.latlng);
-      if (startPx.distanceTo(clickPx) < CLOSE_THRESHOLD_PX) {
-        setIsClosed(true);
-        return;
-      }
-    }
-    setPoints(prev => [...prev, e.latlng]);
-  }, [isClosed, points, mapRef, activeDataset]);
-
-  const handleResetDrawing = () => {
-    setPoints([]);
-    setIsClosed(false);
+  const handleSelectionComplete = useCallback((bounds) => {
+    setSelectionBounds(bounds);
     setError('');
-  };
+  }, []);
 
-  const handleUndoLast = () => {
-    if (isClosed) setIsClosed(false);
-    else setPoints(prev => prev.slice(0, -1));
+  const handleClearSelection = () => {
+    setSelectionBounds(null);
     setError('');
   };
 
   const handleDownload = async () => {
-    if (!isClosed || points.length < 3) return;
+    if (!selectionBounds) return;
     setIsDownloading(true);
     setError('');
     try {
-      const coordinates = points.map(p => [p.lng, p.lat]);
-      // Multi-dataset extraction is now the default
-      await downloadMultiZone(coordinates);
+      await extractZone(
+        selectionBounds.minLon,
+        selectionBounds.minLat,
+        selectionBounds.maxLon,
+        selectionBounds.maxLat,
+      );
     } catch (err) {
       console.error('Download failed', err);
-      setError('Extraction failed. Ensure your selection overlaps with available datasets.');
+      const message = err.response?.status === 404
+        ? 'No data found in the selected area.'
+        : 'Extraction failed. Please try again.';
+      setError(message);
     } finally {
       setIsDownloading(false);
     }
@@ -136,11 +199,10 @@ function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Reset input so the same file can be selected again if needed
     e.target.value = null;
 
     const uploadId = Math.random().toString(36).substring(7);
-    const datasetName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+    const datasetName = file.name.replace(/\.[^/.]+$/, "");
 
     setUploadingFiles(prev => [...prev, { id: uploadId, name: datasetName, progress: 0 }]);
 
@@ -151,28 +213,21 @@ function App() {
       });
       
       const datasetId = response.data.dataset_id;
-      
-      // Auto-process right after upload completes
       await processDataset(datasetId);
 
-      // Remove from uploading list and refresh main datasets
       setUploadingFiles(prev => prev.filter(u => u.id !== uploadId));
       fetchDatasets();
 
     } catch (err) {
       console.error("Background upload failed:", err);
-      // Change progress to error state
       setUploadingFiles(prev => prev.map(u => u.id === uploadId ? { ...u, progress: -1 } : u));
-      // Auto remove error state after 5 seconds
       setTimeout(() => {
         setUploadingFiles(prev => prev.filter(u => u.id !== uploadId));
       }, 5000);
     }
   };
 
-  const linePositions = useMemo(() => points.map(p => [p.lat, p.lng]), [points]);
-  const polygonPositions = useMemo(() => isClosed ? points.map(p => [p.lat, p.lng]) : null, [points, isClosed]);
-  const step = points.length === 0 ? 'start' : !isClosed ? 'drawing' : 'complete';
+  const drawingEnabled = !!activeDataset && !isDownloading;
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: '#0a0a0a' }}>
@@ -302,9 +357,8 @@ function App() {
         <MapContainer
           center={[0, 0]}
           zoom={2}
-          style={{ height: '100%', width: '100%', cursor: (!activeDataset || isClosed) ? 'grab' : 'crosshair' }}
+          style={{ height: '100%', width: '100%', cursor: drawingEnabled ? 'crosshair' : 'grab' }}
           zoomControl={true}
-          ref={setMapRef}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.carto.com/">CARTO</a>'
@@ -323,7 +377,6 @@ function App() {
             };
             
             if (ds.geographic_boundary && ds.geographic_boundary.coordinates) {
-              // Recursively convert GeoJSON [lon, lat] arrays to Leaflet [lat, lon] arrays
               const flipCoords = (coords) => {
                 if (typeof coords[0] === 'number') {
                   return [coords[1], coords[0]];
@@ -337,7 +390,6 @@ function App() {
                   key={ds.id}
                   positions={positions}
                   pathOptions={pathOptions}
-                  interactive={points.length === 0 || isClosed}
                   eventHandlers={{ click: () => setActiveDataset(ds) }}
                 >
                   <Tooltip sticky direction="top">{ds.dataset_name}</Tooltip>
@@ -353,7 +405,6 @@ function App() {
                   key={ds.id}
                   bounds={bounds}
                   pathOptions={pathOptions}
-                  interactive={points.length === 0 || isClosed}
                   eventHandlers={{ click: () => setActiveDataset(ds) }}
                 >
                   <Tooltip sticky direction="top">{ds.dataset_name}</Tooltip>
@@ -362,30 +413,27 @@ function App() {
             }
           })}
 
-          {/* User drawn polygon */}
-          {activeDataset && (
-            <>
-              {polygonPositions && (
-                <Polygon positions={polygonPositions} pathOptions={{ color: '#3b82f6', weight: 2, fillOpacity: 0.15, fillColor: '#3b82f6' }} />
-              )}
-              {!isClosed && linePositions.length >= 2 && (
-                <Polyline positions={linePositions} pathOptions={{ color: '#3b82f6', weight: 2, dashArray: '6, 4' }} />
-              )}
-              {points.map((pt, i) => (
-                <CircleMarker
-                  key={i} center={pt} radius={i === 0 ? 8 : 5}
-                  pathOptions={{ color: i === 0 ? '#10b981' : '#3b82f6', fillColor: i === 0 ? '#10b981' : '#3b82f6', fillOpacity: 1, weight: 2 }}
-                >
-                  {i === 0 && !isClosed && points.length >= 3 && (
-                    <Tooltip permanent direction="top" offset={[0, -10]} className="point-tooltip">Click to close</Tooltip>
-                  )}
-                </CircleMarker>
-              ))}
-            </>
+          {/* User selection rectangle */}
+          {selectionBounds && (
+            <Rectangle
+              bounds={[
+                [selectionBounds.minLat, selectionBounds.minLon],
+                [selectionBounds.maxLat, selectionBounds.maxLon],
+              ]}
+              pathOptions={{
+                color: '#3b82f6',
+                weight: 2,
+                fillOpacity: 0.15,
+                fillColor: '#3b82f6',
+              }}
+            />
           )}
 
           <MapEffects dataset={activeDataset} />
-          <ClickHandler onMapClick={handleMapClick} activeDataset={activeDataset} />
+          <RectangleSelector
+            enabled={drawingEnabled}
+            onSelectionComplete={handleSelectionComplete}
+          />
         </MapContainer>
 
         {/* Top bar indicator */}
@@ -398,7 +446,7 @@ function App() {
           </div>
         </div>
 
-        {/* Bottom Floating Action Bar (Only shows when dataset is active) */}
+        {/* Bottom Floating Action Bar */}
         {activeDataset && (
           <div style={{
             position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)',
@@ -411,41 +459,48 @@ function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '16px', borderRight: '1px solid var(--border-light)' }}>
               <Database size={16} color="var(--accent-primary)" />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: '#fff' }}>Extraction Active</span>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>Capturing all overlapping data</span>
+                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: '#fff' }}>Zone Extraction</span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>Drag a rectangle on the map</span>
               </div>
               <button onClick={() => setActiveDataset(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', marginLeft: '4px' }}>
                 <X size={16} />
               </button>
             </div>
 
-            {/* Drawing Controls */}
+            {/* Selection Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {!isClosed ? (
+              {!selectionBounds ? (
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <MousePointer size={14} /> {points.length === 0 ? "Click map to draw" : `${points.length} points`}
+                  <Maximize2 size={14} /> Drag to select area
                 </span>
               ) : (
-                <span style={{ fontSize: '0.85rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle2 size={14} /> Ready
+                <span style={{ fontSize: '0.75rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'monospace' }}>
+                  {selectionBounds.minLat.toFixed(4)}°, {selectionBounds.minLon.toFixed(4)}° → {selectionBounds.maxLat.toFixed(4)}°, {selectionBounds.maxLon.toFixed(4)}°
                 </span>
               )}
 
-              {points.length > 0 && (
-                <>
-                  <button onClick={handleUndoLast} className="btn-secondary" style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem' }}>Undo</button>
-                  <button onClick={handleResetDrawing} className="btn-secondary" style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem' }}>Clear</button>
-                </>
+              {selectionBounds && (
+                <button onClick={handleClearSelection} className="btn-secondary" style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem' }}>Clear</button>
+              )}
+
+              {error && (
+                <span style={{ fontSize: '0.75rem', color: '#ef4444', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{error}</span>
               )}
 
               <button 
                 className="btn-primary" 
                 onClick={handleDownload} 
-                disabled={!isClosed || isDownloading || activeDataset.status === 'processing'}
+                disabled={!selectionBounds || isDownloading || activeDataset.status === 'processing'}
                 style={{ padding: '8px 20px', borderRadius: '20px', marginLeft: '8px' }}
                 title={activeDataset.status === 'processing' ? 'Wait for dataset processing to complete' : ''}
               >
-                {isDownloading ? 'Processing...' : activeDataset.status === 'processing' ? 'Dataset Processing...' : <><Download size={16} /> Download</>}
+                {isDownloading ? (
+                  <><Loader2 size={16} className="spin-animation" /> Extracting...</>
+                ) : activeDataset.status === 'processing' ? (
+                  'Dataset Processing...'
+                ) : (
+                  <><Download size={16} /> Download</>
+                )}
               </button>
             </div>
           </div>
@@ -456,15 +511,6 @@ function App() {
         body { margin: 0; padding: 0; }
         .spin-animation { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        .point-tooltip {
-          background: rgba(0,0,0,0.8) !important;
-          border: 1px solid rgba(255,255,255,0.1) !important;
-          color: #fff !important;
-          font-size: 0.7rem !important;
-          font-weight: 600 !important;
-          padding: 2px 8px !important;
-          border-radius: 6px !important;
-        }
         .leaflet-container {
           background: #111;
         }

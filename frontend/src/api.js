@@ -21,45 +21,26 @@ export const uploadDataset = (datasetName, file, onUploadProgress) => {
   });
 };
 
-export const processDataset = (datasetId, maxDepth = 8, pointThreshold = 5000000) => {
+export const processDataset = (datasetId, tileSizeMeters = 2000) => {
   return api.post(`/lidar/process/${datasetId}`, {
-    max_depth: maxDepth,
-    point_threshold: pointThreshold,
+    tile_size_meters: tileSizeMeters,
   });
 };
 
-export const downloadZone = async (datasetId, coordinates, minZ, maxZ) => {
-  const response = await api.post(`/lidar/nodes/${datasetId}/zone`, {
-    coordinates,
-    min_z: minZ,
-    max_z: maxZ,
+export const extractZone = async (minLon, minLat, maxLon, maxLat) => {
+  const response = await api.post('/lidar/tiles/extract-zone', {
+    min_lon: minLon,
+    min_lat: minLat,
+    max_lon: maxLon,
+    max_lat: maxLat,
   }, {
     responseType: 'blob',
   });
-  
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', `zone_${datasetId}.laz`);
-  document.body.appendChild(link);
-  link.click();
-  link.parentNode.removeChild(link);
-  window.URL.revokeObjectURL(url);
-};
 
-export const downloadMultiZone = async (coordinates, minZ = -1e10, maxZ = 1e10) => {
-  const response = await api.post(`/lidar/nodes/multi-zone`, {
-    coordinates,
-    min_z: minZ,
-    max_z: maxZ,
-  }, {
-    responseType: 'blob',
-  });
-  
   const url = window.URL.createObjectURL(new Blob([response.data]));
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', `multi_dataset_extraction.laz`);
+  link.setAttribute('download', 'zone_extraction.laz');
   document.body.appendChild(link);
   link.click();
   link.parentNode.removeChild(link);

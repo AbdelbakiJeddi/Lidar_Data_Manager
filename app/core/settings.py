@@ -26,9 +26,6 @@ class Settings(BaseSettings):
 
     pdal_bin: str = "pdal"
 
-    octree_max_depth: int = 8
-    octree_point_threshold: int = 1_000_000
-
 
 @lru_cache
 def get_settings() -> Settings:
@@ -41,5 +38,3 @@ _settings = get_settings()
 
 BUCKET_RAW = _settings.minio_bucket_raw
 BUCKET_PROCESSED = _settings.minio_bucket_processed
-OCTREE_MAX_DEPTH = _settings.octree_max_depth
-OCTREE_POINT_THRESHOLD = _settings.octree_point_threshold

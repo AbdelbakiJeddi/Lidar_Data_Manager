@@ -22,7 +22,10 @@ class Dataset(BaseModel):
     last_modified: Optional[datetime] = None
     status: str = "uploaded"  # uploaded, processing, completed, failed
     point_count: Optional[int] = None
-    node_count: Optional[int] = None
+    tiling_strategy: Optional[str] = None
+    grid_origin: Optional[list[float]] = None
+    tile_size_meters: Optional[float] = None
+    total_tiles: Optional[int] = None
     bbox: Optional[BoundingBox] = None
     geographic_bbox: Optional[BoundingBox] = None
     geographic_boundary: Optional[Dict[str, Any]] = None

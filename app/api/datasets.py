@@ -12,11 +12,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
 
 from app.api.dependencies import get_db, get_minio
-from app.models import Dataset, OctreeProcessRequest
-from app.repositories import DatasetRepository, OctreeNodeRepository
-from app.core.minio_client import BUCKET_RAW, BUCKET_PROCESSED, download_file as minio_download_file
+from app.models import Dataset, TileProcessRequest
+from app.repositories import DatasetRepository, TileRepository
+from app.core.minio_client import BUCKET_RAW, download_file as minio_download_file
 from app.services.pdal_processor import PDALProcessor, PDALPipelineError
-from app.services.octree_builder import OctreeBuilder
+from app.services.tile_manager import TileManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lidar", tags=["datasets"])
@@ -75,12 +75,12 @@ async def upload_lidar(
 @router.post("/process/{dataset_id}")
 async def process_lidar(
     dataset_id: str,
-    request: OctreeProcessRequest,
+    request: TileProcessRequest,
     background_tasks: BackgroundTasks,
     db: AsyncIOMotorDatabase = Depends(get_db),
     minio_client: Minio = Depends(get_minio)
 ) -> dict:
-    """Start octree processing for a dataset."""
+    """Start tile processing for a dataset."""
     dataset_repo = DatasetRepository(db)
     dataset = await dataset_repo.get(dataset_id)
 
@@ -96,31 +96,30 @@ async def process_lidar(
     await dataset_repo.update_status(dataset_id, "processing")
 
     background_tasks.add_task(
-        _process_octree_background,
-        dataset_id, dataset.object_name,
-        request.max_depth, request.point_threshold,
-        db, minio_client
+        _process_tiles_background,
+        dataset_id,
+        dataset.object_name,
+        request.tile_size_meters,
+        db,
+        minio_client,
     )
 
     return {
         "dataset_id": dataset_id,
         "status": "processing_started",
-        "message": f"Octree building started for {dataset.object_name}"
+        "message": f"Tile splitting started for {dataset.object_name}"
     }
 
 
-async def _process_octree_background(
+async def _process_tiles_background(
     dataset_id: str,
     object_name: str,
-    max_depth: int,
-    point_threshold: int,
+    tile_size_meters: float,
     db: AsyncIOMotorDatabase,
     minio_client: Minio
 ):
-    """Background task for octree processing."""
+    """Background task for tile processing."""
     dataset_repo = DatasetRepository(db)
-    node_repo = OctreeNodeRepository(db)
-
     try:
         # Extract early metadata
         with tempfile.NamedTemporaryFile(suffix=".laz") as tmp:
@@ -141,28 +140,11 @@ async def _process_octree_background(
             srs_wkt=srs_wkt
         )
 
-        builder = OctreeBuilder(
-            minio_client=minio_client,
-            dataset_id=dataset_id,
-            max_depth=max_depth,
-            point_threshold=point_threshold
-        )
-
-        nodes = builder.build_octree(object_name, input_in_minio=True, source_bucket=BUCKET_RAW)
-        stats = builder.get_stats()
-
-        await node_repo.create_many(dataset_id, nodes)
-        await dataset_repo.update_status(
-            dataset_id,
-            "completed",
-            point_count=stats["total_points"],
-            node_count=stats["total_nodes"]
-        )
-
-        builder.cleanup()
+        tile_manager = TileManager(minio_client=minio_client, db=db)
+        await tile_manager.process_dataset(dataset_id, tile_size=tile_size_meters)
 
     except Exception as e:
-        logger.error(f"Octree processing failed: {e}")
+        logger.error(f"Tile processing failed: {e}")
         await dataset_repo.update_status(dataset_id, "failed", error=str(e))
 
 
@@ -209,15 +191,14 @@ async def get_dataset(
     return dataset.model_dump()
 
 
-@router.get("/datasets/{dataset_id}/nodes")
-async def list_dataset_nodes(
+@router.get("/datasets/{dataset_id}/tiles")
+async def list_dataset_tiles(
     dataset_id: str,
-    depth: Optional[int] = None,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> dict:
-    """Get octree nodes for a dataset."""
+    """Get tiles for a dataset."""
     dataset_repo = DatasetRepository(db)
-    node_repo = OctreeNodeRepository(db)
+    tile_repo = TileRepository(db)
 
     dataset = await dataset_repo.get(dataset_id)
     if not dataset:
@@ -226,12 +207,12 @@ async def list_dataset_nodes(
     if dataset.status != "completed":
         raise HTTPException(status_code=400, detail=f"Dataset status: {dataset.status}")
 
-    nodes = await node_repo.get_by_dataset(dataset_id, depth)
+    tiles = await tile_repo.get_by_dataset(dataset_id)
 
     return {
         "dataset_id": dataset_id,
-        "total_nodes": len(nodes),
-        "nodes": nodes
+        "total_tiles": len(tiles),
+        "tiles": tiles
     }
 
 
