@@ -21,7 +21,7 @@ export const uploadDataset = (datasetName, file, onUploadProgress) => {
   });
 };
 
-export const processDataset = (datasetId, tileSizeMeters = 2000) => {
+export const processDataset = (datasetId, tileSizeMeters = 0) => {
   return api.post(`/lidar/process/${datasetId}`, {
     tile_size_meters: tileSizeMeters,
   });

@@ -45,6 +45,7 @@ Thumbs.db
 #LAZ/LAS files
 *.laz
 *.las
+*.sh
 
 #Agent
 .claude

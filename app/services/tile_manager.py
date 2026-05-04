@@ -69,6 +69,23 @@ class TileManager:
             origin_x = bbox_dict["min_x"]
             origin_y = bbox_dict["min_y"]
 
+            # Dynamic tile size calculation
+            if tile_size <= 0:
+                width = bbox_dict["max_x"] - bbox_dict["min_x"]
+                height = bbox_dict["max_y"] - bbox_dict["min_y"]
+                max_dim = max(width, height)
+                
+                if max_dim <= 1000:
+                    # For small data, use one or two large tiles
+                    tile_size = max(500.0, max_dim)
+                else:
+                    # For larger data, aim for ~1000m tiles or 10% of max dim
+                    tile_size = max(1000.0, max_dim / 10)
+                
+                # Round to nearest 100m for cleaner numbers
+                tile_size = round(tile_size / 100) * 100
+                logger.info(f"Auto-calculated tile size: {tile_size}m (based on {width:.1f}x{height:.1f}m extent)")
+
             logger.info(f"Splitting into {tile_size}m tiles with origin ({origin_x}, {origin_y})")
             raw_tile_paths = self.pdal.split_to_grid(
                 local_input, raw_tiles_dir, tile_size, origin_x=origin_x, origin_y=origin_y

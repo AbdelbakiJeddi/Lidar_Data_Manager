@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class TileProcessRequest(BaseModel):
     """Request model for tile processing."""
 
-    tile_size_meters: float = Field(default=2000.0, gt=0)
+    tile_size_meters: float = Field(default=1000.0, ge=0)
 
 
 class BBoxRequest(BaseModel):
