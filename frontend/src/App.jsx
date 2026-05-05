@@ -195,14 +195,32 @@ function App() {
     }
   };
 
-  const handleFileUpload = async (e) => {
+  const [datasetNameInput, setDatasetNameInput] = useState('');
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const pendingFileRef = useRef(null);
+
+  const handleUploadButtonClick = () => {
+    fileInputRef.current.click();
+  };
+
+  const handleFileSelected = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
+    pendingFileRef.current = file;
     e.target.value = null;
+    setDatasetNameInput(file.name.replace(/\.[^/.]+$/, ""));
+    setShowUploadDialog(true);
+  };
+
+  const handleUploadConfirm = async () => {
+    const file = pendingFileRef.current;
+    if (!file) return;
+
+    const datasetName = datasetNameInput.trim() || file.name.replace(/\.[^/.]+$/, "");
+    setShowUploadDialog(false);
+    pendingFileRef.current = null;
 
     const uploadId = Math.random().toString(36).substring(7);
-    const datasetName = file.name.replace(/\.[^/.]+$/, "");
 
     setUploadingFiles(prev => [...prev, { id: uploadId, name: datasetName, progress: 0 }]);
 
@@ -211,7 +229,7 @@ function App() {
         const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
         setUploadingFiles(prev => prev.map(u => u.id === uploadId ? { ...u, progress: percentCompleted } : u));
       });
-      
+
       const datasetId = response.data.dataset_id;
       await processDataset(datasetId);
 
@@ -233,12 +251,12 @@ function App() {
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: '#0a0a0a' }}>
       
       {/* Hidden File Input */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        style={{ display: 'none' }} 
-        accept=".las,.laz" 
-        onChange={handleFileUpload} 
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept=".las,.laz"
+        onChange={handleFileSelected}
       />
 
       {/* Left Sidebar - Dataset Management */}
@@ -260,7 +278,7 @@ function App() {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: '500', marginTop: '4px' }}>Map Explorer</p>
             </div>
           </div>
-          <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => fileInputRef.current.click()}>
+          <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={handleUploadButtonClick}>
             <Upload size={16} /> Upload Dataset
           </button>
         </div>
@@ -506,6 +524,75 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* Upload Dialog */}
+      {showUploadDialog && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 3000
+        }}>
+          <div style={{
+            background: 'var(--bg-card-heavy)', border: '1px solid var(--border-light)',
+            borderRadius: '16px', padding: '24px', width: '400px', maxWidth: '90vw'
+          }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem' }}>Upload to Dataset</h3>
+            <label style={{ display: 'block', marginBottom: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Dataset Name
+              <input
+                type="text"
+                value={datasetNameInput}
+                onChange={(e) => setDatasetNameInput(e.target.value)}
+                placeholder="Enter or select dataset name"
+                style={{
+                  width: '100%', marginTop: '4px', padding: '8px 12px',
+                  borderRadius: '8px', border: '1px solid var(--border-light)',
+                  background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '0.9rem'
+                }}
+              />
+            </label>
+            {datasets.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '6px' }}>Existing datasets:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[...new Set(datasets.map(d => d.dataset_name))].map(name => (
+                    <button
+                      key={name}
+                      onClick={() => setDatasetNameInput(name)}
+                      style={{
+                        padding: '4px 10px', borderRadius: '12px', border: '1px solid var(--border-light)',
+                        background: datasetNameInput === name ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
+                        color: datasetNameInput === name ? '#fff' : 'var(--text-muted)',
+                        fontSize: '0.75rem', cursor: 'pointer'
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pendingFileRef.current && (
+              <div style={{ marginBottom: '16px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                File: <strong>{pendingFileRef.current.name}</strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button className="btn-secondary" onClick={() => { setShowUploadDialog(false); pendingFileRef.current = null; }}>
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                disabled={!datasetNameInput.trim() || !pendingFileRef.current}
+                onClick={handleUploadConfirm}
+              >
+                <Upload size={14} /> Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         body { margin: 0; padding: 0; }
