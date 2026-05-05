@@ -18,3 +18,17 @@ class BBoxRequest(BaseModel):
     max_lat: float
     min_z: float = -1e10
     max_z: float = 1e10
+
+
+class LoginRequest(BaseModel):
+    """Login payload."""
+
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """JWT response payload."""
+
+    access_token: str
+    token_type: str = "bearer"

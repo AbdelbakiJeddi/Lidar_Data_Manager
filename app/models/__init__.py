@@ -3,7 +3,7 @@
 from .bounding_box import BoundingBox
 from .dataset import Dataset
 from .tile import Tile
-from .requests import TileProcessRequest, BBoxRequest
+from .requests import TileProcessRequest, BBoxRequest, LoginRequest, TokenResponse
 
 __all__ = [
     "BoundingBox",
@@ -11,4 +11,6 @@ __all__ = [
     "Tile",
     "TileProcessRequest",
     "BBoxRequest",
+    "LoginRequest",
+    "TokenResponse",
 ]

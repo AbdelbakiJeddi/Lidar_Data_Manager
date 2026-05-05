@@ -9,14 +9,18 @@ from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
 
-from app.api.dependencies import get_db, get_minio
+from app.api.dependencies import get_db, get_minio, get_current_user
 from app.repositories import DatasetRepository, TileRepository
 from app.core.minio_client import BUCKET_PROCESSED, download_file
 from app.services.pdal_processor import PDALProcessor
 from app.models import Dataset, BBoxRequest
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/lidar/tiles", tags=["tiles"])
+router = APIRouter(
+    prefix="/lidar/tiles",
+    tags=["tiles"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # --------------------------------------------------------------------------- #

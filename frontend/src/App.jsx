@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, useMap, Rectangle, Polygon, useMapEvents, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { getDatasets, extractZone, uploadDataset, processDataset } from './api';
+import { getDatasets, extractZone, uploadDataset, processDataset, getToken, setToken, decodeTokenPayload } from './api';
 import { Box, Upload, RefreshCw, Layers, Database, X, Download, AlertTriangle, Maximize2, Loader2 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
+import Login from './components/Login';
 
 // Colors for dataset contours
 const CONTOUR_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6'];
@@ -124,6 +125,8 @@ const RectangleSelector = ({ enabled, onSelectionComplete }) => {
 
 
 function App() {
+  const [authToken, setAuthTokenState] = useState(getToken());
+  const [userRole, setUserRole] = useState(() => decodeTokenPayload(getToken())?.role || null);
   const [datasets, setDatasets] = useState([]);
   const [activeDataset, setActiveDataset] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -137,23 +140,42 @@ function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
 
+  const handleLogout = useCallback(() => {
+    setToken(null);
+    setAuthTokenState(null);
+    setUserRole(null);
+    setDatasets([]);
+    setActiveDataset(null);
+  }, []);
+
+  const handleLoginSuccess = useCallback((token) => {
+    setToken(token);
+    setAuthTokenState(token);
+    setUserRole(decodeTokenPayload(token)?.role || null);
+  }, []);
+
   const fetchDatasets = async () => {
     setIsRefreshing(true);
     try {
       const response = await getDatasets();
       setDatasets(response.data.datasets || []);
     } catch (err) {
-      console.error('Failed to fetch datasets', err);
+      if (err.response?.status === 401) {
+        handleLogout();
+      } else {
+        console.error('Failed to fetch datasets', err);
+      }
     } finally {
       setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
+    if (!authToken) return;
     fetchDatasets();
     const interval = setInterval(fetchDatasets, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [authToken]);
 
   // Reset selection when dataset is deselected
   useEffect(() => {
@@ -196,6 +218,7 @@ function App() {
   };
 
   const handleFileUpload = async (e) => {
+    if (userRole !== 'admin') return;
     const file = e.target.files[0];
     if (!file) return;
 
@@ -229,6 +252,10 @@ function App() {
 
   const drawingEnabled = !!activeDataset && !isDownloading;
 
+  if (!authToken) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: '#0a0a0a' }}>
       
@@ -260,9 +287,23 @@ function App() {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: '500', marginTop: '4px' }}>Map Explorer</p>
             </div>
           </div>
-          <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => fileInputRef.current.click()}>
-            <Upload size={16} /> Upload Dataset
-          </button>
+          {userRole === 'admin' ? (
+            <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => fileInputRef.current.click()}>
+              <Upload size={16} /> Upload Dataset
+            </button>
+          ) : (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Read-only access: download only
+            </div>
+          )}
+          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+              Role: {userRole || 'unknown'}
+            </span>
+            <button className="btn-secondary" onClick={handleLogout} style={{ padding: '6px 10px' }}>
+              Logout
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>

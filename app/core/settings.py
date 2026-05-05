@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     mongo_db_name: str = "lidar_db"
 
     pdal_bin: str = "pdal"
+    jwt_secret: str = "change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+
+    auth_admin_username: str = "admin"
+    auth_admin_password: str = "admin123"
+    auth_user_username: str = "user"
+    auth_user_password: str = "user123"
 
 
 @lru_cache

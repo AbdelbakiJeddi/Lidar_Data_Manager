@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
 
-from app.api.dependencies import get_db, get_minio
+from app.api.dependencies import get_db, get_minio, get_current_user, require_admin, CurrentUser
 from app.models import Dataset, TileProcessRequest
 from app.repositories import DatasetRepository, TileRepository
 from app.core.minio_client import BUCKET_RAW, download_file as minio_download_file
@@ -27,7 +27,8 @@ async def upload_lidar(
     file: UploadFile = File(...),
     dataset_name: str = Form(...),
     db: AsyncIOMotorDatabase = Depends(get_db),
-    minio_client: Minio = Depends(get_minio)
+    minio_client: Minio = Depends(get_minio),
+    _: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Upload a LiDAR file (LAS/LAZ) to storage."""
     from pathlib import Path
@@ -78,7 +79,8 @@ async def process_lidar(
     request: TileProcessRequest,
     background_tasks: BackgroundTasks,
     db: AsyncIOMotorDatabase = Depends(get_db),
-    minio_client: Minio = Depends(get_minio)
+    minio_client: Minio = Depends(get_minio),
+    _: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Start tile processing for a dataset."""
     dataset_repo = DatasetRepository(db)
@@ -151,7 +153,8 @@ async def _process_tiles_background(
 @router.get("/datasets")
 async def list_datasets(
     dataset_name: Optional[str] = None,
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """List datasets, optionally filtered by group name."""
     dataset_repo = DatasetRepository(db)
@@ -166,7 +169,8 @@ async def list_datasets(
 
 @router.get("/dataset-groups")
 async def list_dataset_groups(
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """List all unique dataset group names."""
     dataset_repo = DatasetRepository(db)
@@ -179,7 +183,8 @@ async def list_dataset_groups(
 @router.get("/datasets/{dataset_id}")
 async def get_dataset(
     dataset_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Get dataset details."""
     dataset_repo = DatasetRepository(db)
@@ -194,7 +199,8 @@ async def get_dataset(
 @router.get("/datasets/{dataset_id}/tiles")
 async def list_dataset_tiles(
     dataset_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Get tiles for a dataset."""
     dataset_repo = DatasetRepository(db)
@@ -221,7 +227,8 @@ async def get_lidar_info(
     dataset_id: str,
     override_srs: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_db),
-    minio_client: Minio = Depends(get_minio)
+    minio_client: Minio = Depends(get_minio),
+    _: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Get LiDAR file info using PDAL."""
     dataset_repo = DatasetRepository(db)

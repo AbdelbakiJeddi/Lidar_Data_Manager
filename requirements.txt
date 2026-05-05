@@ -6,3 +6,5 @@ motor
 pydantic-settings
 numpy
 pyproj
+python-jose[cryptography]
+pytest

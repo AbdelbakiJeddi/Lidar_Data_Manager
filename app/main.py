@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import datasets_router, tiles_router, health_router
+from app.api import datasets_router, tiles_router, health_router, auth_router
 from app.core.minio_client import ensure_buckets, get_minio_client
 from app.core.mongo_client import ensure_indexes, get_database, close_mongo_client
 from app.services.pdal_processor import PDALProcessor
@@ -49,5 +49,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(datasets_router)
 app.include_router(tiles_router)
