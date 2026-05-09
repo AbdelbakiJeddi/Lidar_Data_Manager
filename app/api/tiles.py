@@ -4,8 +4,11 @@ import os
 import shutil
 import tempfile
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
+from starlette.datastructures import Headers
+from starlette.responses import Response
+from datetime import timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from minio import Minio
 
@@ -66,6 +69,59 @@ async def download_tile(
         )
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.api_route("/{dataset_id}/{grid_x}/{grid_y}/file{extension:path}", methods=["GET", "HEAD"])
+async def get_tile_file(
+    dataset_id: str,
+    grid_x: int,
+    grid_y: int,
+    extension: str = "",
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    minio_client: Minio = Depends(get_minio),
+) -> RedirectResponse:
+    """Redirect to MinIO presigned URL for direct file access (handles range requests natively)."""
+    tile_repo = TileRepository(db)
+
+    tile = await tile_repo.get_by_grid_index(dataset_id, grid_x, grid_y)
+    if not tile:
+        raise HTTPException(status_code=404, detail="Tile not found")
+
+    public_client = Minio(
+        "localhost:9000",
+        access_key=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
+        secret_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
+        secure=False,
+        region="us-east-1"
+    )
+    url = public_client.presigned_get_object(
+        BUCKET_PROCESSED,
+        tile["minio_path"],
+        expires=timedelta(hours=1)
+    )
+    return RedirectResponse(url)
+
+
+def _range_iterator(file_path: str, range_header: str, file_size: int):
+    """Handle range requests for HTTP 206 responses."""
+    import re
+    match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+    if not match:
+        return
+    
+    start = int(match.group(1))
+    end = int(match.group(2)) if match.group(2) else file_size - 1
+    
+    with open(file_path, "rb") as f:
+        f.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk_size = min(8 * 1024 * 1024, remaining)
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
 
 
 # --------------------------------------------------------------------------- #
@@ -246,3 +302,116 @@ async def extract_zone(
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/crop-preview")
+async def crop_preview(
+    request: BBoxRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    minio_client: Minio = Depends(get_minio),
+):
+    """Crop zone to bbox and return a presigned URL for Potree to load."""
+    import uuid, tempfile, os as _os
+    from pyproj import Transformer
+
+    pdal = PDALProcessor(require_available=False)
+    if not pdal.pdal_version:
+        raise HTTPException(status_code=503, detail="PDAL not available")
+
+    tile_repo = TileRepository(db)
+    temp_dir = tempfile.mkdtemp(prefix="preview_")
+
+    # Clean up old previews
+    try:
+        old_objects = minio_client.list_objects(BUCKET_PROCESSED, prefix="previews/")
+        for obj in old_objects:
+            minio_client.remove_object(BUCKET_PROCESSED, obj.object_name)
+    except Exception as e:
+        logger.warning("Failed to clean up old previews: %s", e)
+
+    try:
+        query = {
+            "status": "completed",
+            "geographic_bbox.max_x": {"$gt": request.min_lon},
+            "geographic_bbox.min_x": {"$lt": request.max_lon},
+            "geographic_bbox.max_y": {"$gt": request.min_lat},
+            "geographic_bbox.min_y": {"$lt": request.max_lat},
+        }
+        dataset_docs = [doc async for doc in db.datasets.find(query)]
+        if not dataset_docs:
+            raise HTTPException(status_code=404, detail="No datasets found in area")
+
+        from app.models import Dataset
+        cropped_files = []
+
+        for doc in dataset_docs:
+            ds = Dataset.from_mongo(doc)
+            if not ds.srs_wkt:
+                continue
+
+            transformer = Transformer.from_crs("EPSG:4326", ds.srs_wkt, always_xy=True)
+            corners_lon = [request.min_lon, request.min_lon, request.max_lon, request.max_lon]
+            corners_lat = [request.min_lat, request.max_lat, request.min_lat, request.max_lat]
+            xs, ys = transformer.transform(corners_lon, corners_lat)
+            native_min_x, native_max_x = min(xs), max(xs)
+            native_min_y, native_max_y = min(ys), max(ys)
+
+            crop_wkt = (
+                f"POLYGON(("
+                f"{native_min_x} {native_min_y}, "
+                f"{native_max_x} {native_min_y}, "
+                f"{native_max_x} {native_max_y}, "
+                f"{native_min_x} {native_max_y}, "
+                f"{native_min_x} {native_min_y}))"
+            )
+
+            tiles = await tile_repo.get_tiles_in_bbox(
+                ds.id, native_min_x, native_min_y, native_max_x, native_max_y
+            )
+            if not tiles:
+                continue
+
+            for i, tile in enumerate(tiles):
+                local_path = _os.path.join(temp_dir, f"tile_{i}.copc.laz")
+                download_file(minio_client, BUCKET_PROCESSED, tile["minio_path"], local_path)
+                cropped_path = _os.path.join(temp_dir, f"cropped_{i}.laz")
+                pdal.crop_to_polygon(local_path, cropped_path, crop_wkt, request.min_z, request.max_z)
+                try:
+                    info = pdal.get_info(cropped_path)
+                    if info.get("point_count", 0) > 0:
+                        cropped_files.append(cropped_path)
+                except Exception:
+                    pass
+
+        if not cropped_files:
+            raise HTTPException(status_code=404, detail="No points in selected area")
+
+        merged_path = _os.path.join(temp_dir, "preview.laz")
+        if len(cropped_files) == 1:
+            shutil.copy(cropped_files[0], merged_path)
+        else:
+            pdal.merge_files(cropped_files, merged_path)
+
+        final_path = _os.path.join(temp_dir, "preview.copc.laz")
+        pdal.convert_to_copc(merged_path, final_path)
+
+        preview_key = f"previews/{uuid.uuid4()}.copc.laz"
+        minio_client.fput_object(BUCKET_PROCESSED, preview_key, final_path)
+
+        public_client = Minio(
+            "localhost:9000",
+            access_key=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
+            secret_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
+            secure=False,
+            region="us-east-1"
+        )
+        url = public_client.presigned_get_object(
+            BUCKET_PROCESSED,
+            preview_key,
+            expires=timedelta(hours=1)
+        )
+        return {"url": url}
+
+    finally:
+        if _os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)

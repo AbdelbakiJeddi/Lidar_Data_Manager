@@ -194,9 +194,13 @@ async def get_dataset(
 @router.get("/datasets/{dataset_id}/tiles")
 async def list_dataset_tiles(
     dataset_id: str,
+    min_lon: Optional[float] = None,
+    min_lat: Optional[float] = None,
+    max_lon: Optional[float] = None,
+    max_lat: Optional[float] = None,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> dict:
-    """Get tiles for a dataset."""
+    """Get tiles for a dataset, optionally filtered by WGS84 bounding box."""
     dataset_repo = DatasetRepository(db)
     tile_repo = TileRepository(db)
 
@@ -207,7 +211,24 @@ async def list_dataset_tiles(
     if dataset.status != "completed":
         raise HTTPException(status_code=400, detail=f"Dataset status: {dataset.status}")
 
-    tiles = await tile_repo.get_by_dataset(dataset_id)
+    if min_lon is not None and min_lat is not None and max_lon is not None and max_lat is not None:
+        if not dataset.srs_wkt:
+            raise HTTPException(status_code=400, detail="Dataset has no SRS defined")
+
+        try:
+            from pyproj import Transformer
+            transformer = Transformer.from_crs("EPSG:4326", dataset.srs_wkt, always_xy=True)
+            corners_lon = [min_lon, min_lon, max_lon, max_lon]
+            corners_lat = [min_lat, max_lat, min_lat, max_lat]
+            xs, ys = transformer.transform(corners_lon, corners_lat)
+            native_min_x, native_max_x = min(xs), max(xs)
+            native_min_y, native_max_y = min(ys), max(ys)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Coordinate conversion failed: {e}")
+
+        tiles = await tile_repo.get_tiles_in_bbox(dataset_id, native_min_x, native_min_y, native_max_x, native_max_y)
+    else:
+        tiles = await tile_repo.get_by_dataset(dataset_id)
 
     return {
         "dataset_id": dataset_id,

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -26,6 +26,19 @@ export const processDataset = (datasetId, tileSizeMeters = 0) => {
     tile_size_meters: tileSizeMeters,
   });
 };
+
+export const getDatasetTiles = (datasetId, minLon, minLat, maxLon, maxLat) => 
+  api.get(`/lidar/datasets/${datasetId}/tiles`, {
+    params: { min_lon: minLon, min_lat: minLat, max_lon: maxLon, max_lat: maxLat }
+  });
+
+export const getCropPreviewUrl = (bbox) =>
+  api.post('/lidar/tiles/crop-preview', {
+    min_lon: bbox.west,
+    min_lat: bbox.south,
+    max_lon: bbox.east,
+    max_lat: bbox.north,
+  });
 
 export const extractZone = async (minLon, minLat, maxLon, maxLat) => {
   const response = await api.post('/lidar/tiles/extract-zone', {

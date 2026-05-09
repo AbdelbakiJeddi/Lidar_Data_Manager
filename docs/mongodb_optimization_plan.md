@@ -98,7 +98,7 @@ db.datasets.createIndex({ "dataset_name": 1, "status": 1, "created_at": -1 })
   "file_hash": "sha256:abc123def456...",
   "file_size_mb": 6.87,
   "uploaded_by": "user@example.com",
-  "tags": ["vegetation", "2026-q2", "region-midwest"],
+  "tags": ["2026-q2", "region-midwest"],
   "status": "completed",
   "created_at": "2026-04-20T15:06:46.441Z",
   "updated_at": "2026-04-20T15:12:28.160Z",

@@ -1,3 +1,7 @@
+@import "tailwindcss";
+
+/* ── Design Tokens ────────────────────────────────────────────────────── */
+
 :root {
   --bg-dark: #0a0c10;
   --bg-card: rgba(17, 20, 26, 0.7);
@@ -14,6 +18,8 @@
   --error: #ef4444;
   --panel-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
 }
+
+/* ── Base Reset ───────────────────────────────────────────────────────── */
 
 * {
   margin: 0;
@@ -33,6 +39,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Glass Panel ──────────────────────────────────────────────────────── */
+
 .glass-panel {
   background: var(--bg-card);
   backdrop-filter: blur(16px);
@@ -42,6 +50,8 @@ body {
   padding: 24px;
   box-shadow: var(--panel-shadow);
 }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
 
 .btn-primary {
   background: var(--accent-gradient);
@@ -108,7 +118,8 @@ body {
   border-color: rgba(16, 185, 129, 0.3);
 }
 
-/* Table styling */
+/* ── Table Styling ────────────────────────────────────────────────────── */
+
 .table-container {
   width: 100%;
   overflow-x: auto;
@@ -145,6 +156,8 @@ tr:hover td {
   background: rgba(255, 255, 255, 0.015);
 }
 
+/* ── Status Badges ────────────────────────────────────────────────────── */
+
 .status-badge {
   padding: 6px 12px;
   border-radius: 30px;
@@ -175,7 +188,8 @@ tr:hover td {
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
-/* Form styles */
+/* ── Form Styles ──────────────────────────────────────────────────────── */
+
 input.form-input {
   width: 100%;
   background: rgba(0, 0, 0, 0.3);
@@ -201,7 +215,8 @@ input.form-input:focus {
   color: var(--text-muted);
 }
 
-/* Modal styles */
+/* ── Modal Styles ─────────────────────────────────────────────────────── */
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -230,7 +245,8 @@ input.form-input:focus {
 @keyframes fadeIn { to { opacity: 1; } }
 @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
 
-/* Leaflet Overrides */
+/* ── Leaflet Overrides ────────────────────────────────────────────────── */
+
 .leaflet-container {
   background: #111 !important;
 }
@@ -249,8 +265,22 @@ input.form-input:focus {
   font-size: 1.2rem !important;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Custom Scrollbar ─────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
+
+.scrollbar-thin::-webkit-scrollbar { width: 3px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 10px; }
+
+/* ── Animations ───────────────────────────────────────────────────────── */
+
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}

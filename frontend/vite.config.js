@@ -1,10 +1,31 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://web:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+  resolve: {
+    alias: [
+      {
+        find: /^leaflet-draw$/,
+        replacement: path.resolve(__dirname, './src/leaflet-draw-shim.js')
+      }
+    ],
+  },
   optimizeDeps: {
-    include: ['leaflet', 'leaflet-draw']
+    include: ['react-leaflet-draw'],
   }
 })

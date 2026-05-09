@@ -1,16 +1,16 @@
 # LiDAR Data Manager
 
-FastAPI service for managing LiDAR point cloud data with flat 2D tile storage and a premium React-based spatial interface.
+A solution for managing, processing, and analyzing LiDAR point cloud data.
 
-## Overview
+## Introduction
 
-This project provides a complete end-to-end solution for LiDAR data management:
-- **Upload**: Stream LAZ/LAS files to MinIO object storage.
-- **Process**: Split into a flat 2D grid of tiles using PDAL and convert to COPC.
-- **Spatial Intelligence**: Automated geographic boundary extraction and on-the-fly coordinate reprojection (UTM/Lambert/etc. to WGS84).
-- **Interactive Selection**: Premium web interface for selecting and extracting custom zones via free-form polygons.
-- **Store**: Raw data in MinIO, metadata in MongoDB.
-- **Serve**: Query and download tiles or custom spatial zones via REST API.
+This project handles the full lifecycle of LiDAR data:
+
+- **Data Management**: Upload and organize multiple LAZ/LAS point cloud files into datasets
+- **Processing**: Split large point clouds into a flat 2D grid of tiles for efficient storage and retrieval
+- **Spatial Intelligence**: Automatically extract geographic boundaries, reproject coordinates between reference systems, and perform spatial queries
+- **Interactive Selection**: Select custom zones on an interactive map using free-form polygons, with real-time feedback on bounds and elevation ranges
+- **Query & Export**: Retrieve tiles by geographic area, elevation range, or custom polygon selections, and download processed data
 
 ## Quick Start
 
