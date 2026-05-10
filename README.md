@@ -111,7 +111,7 @@ curl "http://localhost:8000/lidar/datasets/{id}/info"
 | Geographic Centering | ✅ Complete |
 | Rectangular Selection | ✅ Complete |
 | Free-form Polygon | ✅ Complete |
-| 3D Visualization (Potree) | 🔄 In Progress |
+| 3D Visualization (Potree) | ✅ Complete |
 
 ## Troubleshooting
 
